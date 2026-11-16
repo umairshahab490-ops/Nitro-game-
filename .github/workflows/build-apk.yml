@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     name: Assemble Debug APK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
@@ -35,15 +35,42 @@ jobs:
           if [ ! -f debug.keystore ] && [ -f debug.keystore.base64 ]; then
             base64 -d debug.keystore.base64 > debug.keystore
           fi
-          if [ -n "${ANDROID_HOME:-}" ] && [ -x "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" ]; then
-            yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -n "$SDK_ROOT" ]; then
+            SDK_MANAGER=$(find "$SDK_ROOT/cmdline-tools" -maxdepth 3 -type f -name sdkmanager 2>/dev/null | head -n 1 || true)
+            if [ -n "$SDK_MANAGER" ] && [ -x "$SDK_MANAGER" ]; then
+              yes | "$SDK_MANAGER" --licenses >/dev/null 2>&1 || true
+            fi
           fi
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | tee /tmp/gradle-build.log
+
+      - name: Publish failure details to summary
+        if: failure()
+        run: |
+          {
+            echo "### Build Debug APK Failure Log (Last 120 Lines)"
+            echo '```text'
+            if [ -f /tmp/gradle-build.log ]; then
+              tail -n 120 /tmp/gradle-build.log
+            else
+              echo "Build log was not created."
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -f /tmp/gradle-build.log ]; then
+            ERR_SUMMARY=$(grep -m1 -E "(^FAILURE:|^> |^e: |Exception:|Error:)" /tmp/gradle-build.log | head -n 1 | tr -d '\r' || true)
+            if [ -z "$ERR_SUMMARY" ]; then
+              ERR_SUMMARY=$(tail -n 1 /tmp/gradle-build.log | tr -d '\r')
+            fi
+            echo "::error title=Build Debug APK failed::${ERR_SUMMARY}"
+          fi
 
       - name: Upload Debug APK artifact
         uses: actions/upload-artifact@v4
