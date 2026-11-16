@@ -181,28 +181,33 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
             }
             GameState.RUNNING -> {
                 audioEngine.paused = false
-                val pct = (gameEngine.speed / GameEngine.MAXSP).coerceIn(0f, 1.35f)
-                val gearFrac = (pct * 5.99f) % 1f
                 audioEngine.updateContinuous(
-                    rpm = 0.22f + 0.78f * gearFrac,
-                    speedPct = pct,
+                    rpm = gameEngine.currentRpm(),
+                    speedPct = gameEngine.normalizedBikeSpeed().coerceIn(0f, 1.4f),
                     nitro = gameEngine.nitroOn,
                     offroad = gameEngine.offroad && gameEngine.speed > 1500f,
                     drafting = gameEngine.isDrafting
                 )
             }
             GameState.DYING -> {
+                gameEngine.clearTouchInputs()
                 audioEngine.paused = false
-                audioEngine.updateContinuous(0.14f, gameEngine.speed / GameEngine.MAXSP, nitro = false, offroad = false, drafting = false)
+                audioEngine.updateContinuous(
+                    rpm = 0.14f,
+                    speedPct = gameEngine.normalizedBikeSpeed().coerceIn(0f, 1.4f),
+                    nitro = false,
+                    offroad = false,
+                    drafting = false
+                )
             }
             GameState.PAUSED -> {
+                gameEngine.clearTouchInputs()
                 audioEngine.paused = true
             }
         }
 
         hudFrameCounter++
         if (hudFrameCounter % 2 == 0 || gameEngine.state != _hudState.value.gameState) {
-            val pct = (gameEngine.speed / GameEngine.MAXSP).coerceIn(0f, 1.3f)
             val routeLen = gameEngine.activeRoute.lengthMeters.coerceAtLeast(1000)
             _hudState.value = HudUiState(
                 gameState = gameEngine.state,
@@ -212,7 +217,7 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
                 elapsedSeconds = gameEngine.elapsedRunSeconds,
                 distanceMeters = gameEngine.distanceMeters.toInt(),
                 speedKmh = (gameEngine.speed * GameEngine.KMH).toInt(),
-                gear = (1 + (pct * 5.99f).toInt()).coerceIn(1, 6),
+                gear = gameEngine.currentGear(),
                 nitroPercent = gameEngine.nitro,
                 nitroActive = gameEngine.nitroOn,
                 isDrafting = gameEngine.isDrafting,
@@ -230,15 +235,18 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
         _lastRunSummary.value = null
         _isNewBestRun.value = false
         _bannerState.value = null
+        gameEngine.clearTouchInputs()
         gameEngine.startNewRun()
     }
 
     fun pauseGame() {
+        gameEngine.clearTouchInputs()
         gameEngine.pause()
         audioEngine.paused = true
     }
 
     fun resumeGame() {
+        gameEngine.clearTouchInputs()
         gameEngine.resume()
         audioEngine.paused = false
     }
@@ -246,10 +254,20 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
     fun returnToMenu() {
         _lastRunSummary.value = null
         _bannerState.value = null
+        gameEngine.clearTouchInputs()
         gameEngine.returnToMenu()
     }
 
+    fun clearTouchInput() {
+        gameEngine.clearTouchInputs()
+    }
+
     fun setTouchInput(left: Boolean? = null, right: Boolean? = null, brake: Boolean? = null, nitro: Boolean? = null) {
+        val interactive = gameEngine.state == GameState.RUNNING || gameEngine.state == GameState.COUNTDOWN
+        if (!interactive) {
+            gameEngine.clearTouchInputs()
+            return
+        }
         if (left != null) gameEngine.touchLeft = left
         if (right != null) gameEngine.touchRight = right
         if (brake != null) gameEngine.touchBrake = brake
@@ -390,6 +408,7 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun onAppPause() {
+        gameEngine.clearTouchInputs()
         if (gameEngine.state == GameState.RUNNING) {
             pauseGame()
         } else {
@@ -421,6 +440,7 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     override fun onRunFinished(summary: RunSummary) {
+        gameEngine.clearTouchInputs()
         val prevBest = prefsState.value.bestScore
         _isNewBestRun.value = summary.score > prevBest
         _lastRunSummary.value = summary

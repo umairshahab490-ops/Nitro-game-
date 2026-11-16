@@ -270,6 +270,7 @@ class GameEngine(private val callbacks: GameEventCallbacks) {
         for (v in vehicles) {
             v.prevRel = (v.z - PLAYERZ + trackLength) % trackLength
         }
+        clearTouchInputs()
 
         state = GameState.COUNTDOWN
         countdownTimer = 2.7f
@@ -280,6 +281,7 @@ class GameEngine(private val callbacks: GameEventCallbacks) {
 
     fun returnToMenu() {
         state = GameState.MENU
+        clearTouchInputs()
         wreckRot = 0f
         playerX = 0f
         speed = MAXSP * 0.22f
@@ -290,11 +292,54 @@ class GameEngine(private val callbacks: GameEventCallbacks) {
     }
 
     fun pause() {
-        if (state == GameState.RUNNING) state = GameState.PAUSED
+        if (state == GameState.RUNNING) {
+            state = GameState.PAUSED
+            clearTouchInputs()
+        }
     }
 
     fun resume() {
-        if (state == GameState.PAUSED) state = GameState.RUNNING
+        if (state == GameState.PAUSED) {
+            clearTouchInputs()
+            state = GameState.RUNNING
+        }
+    }
+
+    fun clearTouchInputs() {
+        touchLeft = false
+        touchRight = false
+        touchBrake = false
+        touchNitro = false
+        tiltSteer = 0f
+    }
+
+    fun effectiveBikeMaxSpeed(): Float =
+        MAXSP * BikeCatalog.effectiveTopSpeedMult(equippedBike, bikeUpgrades)
+
+    fun normalizedBikeSpeed(): Float {
+        val maxSp = effectiveBikeMaxSpeed().coerceAtLeast(1f)
+        return (speed / maxSp).coerceAtLeast(0f)
+    }
+
+    fun currentGear(): Int {
+        if (speed <= 1f) return 1
+        val norm = normalizedBikeSpeed().coerceAtMost(0.9999f)
+        return (1 + (norm * 6f).toInt()).coerceIn(1, 6)
+    }
+
+    fun currentRpm(): Float {
+        if (speed <= 1f) return 0.22f
+        val norm = normalizedBikeSpeed()
+        return if (norm < 5f / 6f) {
+            val scaled = norm * 6f
+            val frac = scaled - floor(scaled)
+            0.28f + 0.68f * frac
+        } else {
+            val sixthProgress = ((norm - 5f / 6f) / (1f / 6f)).coerceIn(0f, 2.5f)
+            val baseClimb = 0.34f + 0.62f * minOf(1f, sixthProgress)
+            val overboost = maxOf(0f, sixthProgress - 1f) * 0.14f
+            (baseClimb + overboost).coerceIn(0.22f, 1.25f)
+        }
     }
 
     fun step(dt: Float) {
@@ -316,7 +361,9 @@ class GameEngine(private val callbacks: GameEventCallbacks) {
             GameState.MENU, GameState.OVER -> {
                 speed = MAXSP * 0.22f
                 position = (position + speed * dt) % trackLength
-                distanceMeters += speed * dt / 100f
+                if (state == GameState.MENU) {
+                    distanceMeters += speed * dt / 100f
+                }
                 skyOffset += findSeg(position).curve * 0.22f * dt * 14f
                 steerVisual = sin(simClockMs * 0.0006f) * 0.25f
                 updateTraffic(dt, interact = false)
@@ -363,7 +410,7 @@ class GameEngine(private val callbacks: GameEventCallbacks) {
         val steer = if (buttonSteer != 0f) buttonSteer else if (tiltEnabled) tiltSteer else 0f
         steerVisual += (steer - steerVisual) * (dt * 7f).coerceAtMost(1f)
 
-        val bikeMaxSp = MAXSP * bikeTopMult
+        val bikeMaxSp = effectiveBikeMaxSpeed()
         val pct = (speed / bikeMaxSp).coerceIn(0f, 1.5f)
         val wantNitro = touchNitro && nitro > 0f
         if (touchNitro && !nitroOn && nitro <= 0f) {
@@ -620,6 +667,7 @@ class GameEngine(private val callbacks: GameEventCallbacks) {
         if (lives <= 0) {
             endReason = "WRECKED"
             state = GameState.DYING
+            clearTouchInputs()
             wreckTimer = 1.0f
             wreckRot = 0f
         }
@@ -643,6 +691,7 @@ class GameEngine(private val callbacks: GameEventCallbacks) {
 
     private fun finalizeOver() {
         state = GameState.OVER
+        clearTouchInputs()
         wreckRot = 0f
         playerX = 0f
         hasShield = false

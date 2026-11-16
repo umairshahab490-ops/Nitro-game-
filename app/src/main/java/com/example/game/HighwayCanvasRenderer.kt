@@ -29,6 +29,16 @@ class HighwayCanvasRenderer {
     private val reusableQuadPath = Path()
     private val reusableTrianglePath = Path()
     private val reusableRidgePath = Path()
+    private val reusablePalmPath = Path()
+
+    private var cachedSkyBrush: Brush? = null
+    private var cachedSkyTop = Color.Unspecified
+    private var cachedSkyBottom = Color.Unspecified
+    private var cachedSkyEndY = -1f
+
+    private var cachedVignetteBrush: Brush? = null
+    private var cachedVignetteW = -1f
+    private var cachedVignetteH = -1f
 
     private val vehicleBuckets = Array(GameEngine.DRAW) { ArrayList<TrafficVehicle>(4) }
     private val pickupBuckets = Array(GameEngine.DRAW) { ArrayList<HighwayPickup>(2) }
@@ -49,24 +59,36 @@ class HighwayCanvasRenderer {
         val h = size.height
         if (w <= 1f || h <= 1f) return@with
 
-        val horizon = h * 0.5f
+        val isLandscape = w > h
+        val horizon = if (isLandscape) h * 0.43f else h * 0.50f
+        val projHalfH = h - horizon
+        val projHalfW = if (isLandscape) {
+            min(w * 0.48f, h * 0.72f)
+        } else {
+            min(w * 0.50f, h * 0.42f)
+        }
+        val spriteScale = if (isLandscape) ((h * 0.58f) / projHalfW).coerceIn(0.60f, 0.92f) else 1f
+        val propHeightScale = if (isLandscape) ((h * 0.30f) / projHalfW).coerceIn(0.36f, 0.78f) else 1f
+
         var shakeX = 0f
         var shakeY = 0f
-        if (engine.shakeTimer > 0f) {
-            val a = engine.shakeAmp * (engine.shakeTimer / 0.6f)
-            shakeX = (Random.nextFloat() - 0.5f) * 2f * a
-            shakeY = (Random.nextFloat() - 0.5f) * 2f * a
-        } else if (engine.nitroOn) {
-            shakeX = (Random.nextFloat() - 0.5f) * 2.4f
-            shakeY = (Random.nextFloat() - 0.5f) * 2.4f
+        if (engine.state != GameState.PAUSED) {
+            if (engine.shakeTimer > 0f) {
+                val a = engine.shakeAmp * (engine.shakeTimer / 0.6f)
+                shakeX = (Random.nextFloat() - 0.5f) * 2f * a
+                shakeY = (Random.nextFloat() - 0.5f) * 2f * a
+            } else if (engine.nitroOn) {
+                shakeX = (Random.nextFloat() - 0.5f) * 2.4f
+                shakeY = (Random.nextFloat() - 0.5f) * 2.4f
+            }
         }
 
         withTransform({ translate(shakeX, shakeY) }) {
             drawSky(engine, w, h, horizon)
-            val base = drawRoad(engine, w, h)
-            drawSprites(engine, base, w)
-            val bikeInfo = drawPlayerBike(engine, w, h)
-            drawHeadlight(bikeInfo, engine.palettes.stageW[1], w, h)
+            val base = drawRoad(engine, w, h, horizon, projHalfW, projHalfH)
+            drawSprites(engine, base, w, spriteScale, propHeightScale)
+            val bikeInfo = drawPlayerBike(engine, w, h, isLandscape)
+            drawHeadlight(bikeInfo, engine.palettes.stageW[1], horizon, projHalfW, h, engine.steerVisual)
             drawRain(engine, dt, w, h)
             drawFx(engine, dt, w, h)
         }
@@ -74,17 +96,26 @@ class HighwayCanvasRenderer {
 
     private fun DrawScope.drawSky(engine: GameEngine, w: Float, h: Float, horizon: Float) {
         val colors = engine.palettes.currentColors
+        val skyTop = colors[StagePaletteState.KEY_SKY_T]
+        val skyBot = colors[StagePaletteState.KEY_SKY_B]
+        val skyEndY = horizon + h * 0.1f
+        val skyBrush = cachedSkyBrush?.takeIf {
+            skyTop == cachedSkyTop && skyBot == cachedSkyBottom && skyEndY == cachedSkyEndY
+        } ?: Brush.verticalGradient(
+            colors = listOf(skyTop, skyBot),
+            startY = 0f,
+            endY = skyEndY
+        ).also {
+            cachedSkyBrush = it
+            cachedSkyTop = skyTop
+            cachedSkyBottom = skyBot
+            cachedSkyEndY = skyEndY
+        }
+
         drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    colors[StagePaletteState.KEY_SKY_T],
-                    colors[StagePaletteState.KEY_SKY_B]
-                ),
-                startY = 0f,
-                endY = horizon + h * 0.1f
-            ),
+            brush = skyBrush,
             topLeft = Offset.Zero,
-            size = Size(w, horizon + h * 0.1f)
+            size = Size(w, skyEndY)
         )
         drawRect(
             color = colors[StagePaletteState.KEY_FOG],
@@ -110,21 +141,19 @@ class HighwayCanvasRenderer {
         val sx = w * 0.5f - engine.skyOffset * 0.08f
         val sy = horizon - h * 0.055f
         if (sunW > 0.03f) {
-            val haloR = h * 0.16f
+            val sunAlpha = sunW.coerceIn(0f, 1f)
             drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color(1f, 0.745f, 0.47f, 0.85f * sunW),
-                        Color(1f, 0.55f, 0.27f, 0f)
-                    ),
-                    center = Offset(sx, sy),
-                    radius = haloR
-                ),
-                radius = haloR,
+                color = Color(1f, 0.55f, 0.27f, 0.22f * sunAlpha),
+                radius = h * 0.16f,
                 center = Offset(sx, sy)
             )
             drawCircle(
-                color = Color(0xFFFFCF7A).copy(alpha = sunW.coerceIn(0f, 1f)),
+                color = Color(1f, 0.745f, 0.47f, 0.42f * sunAlpha),
+                radius = h * 0.11f,
+                center = Offset(sx, sy)
+            )
+            drawCircle(
+                color = Color(0xFFFFCF7A).copy(alpha = sunAlpha),
                 radius = h * 0.075f,
                 center = Offset(sx, sy)
             )
@@ -214,7 +243,14 @@ class HighwayCanvasRenderer {
         drawPath(reusableRidgePath, col)
     }
 
-    private fun DrawScope.drawRoad(engine: GameEngine, w: Float, h: Float): Int {
+    private fun DrawScope.drawRoad(
+        engine: GameEngine,
+        w: Float,
+        h: Float,
+        horizon: Float,
+        projHalfW: Float,
+        projHalfH: Float
+    ): Int {
         val segs = engine.segments
         val nCount = segs.size
         val base = (floor(engine.position / GameEngine.SEG).toInt() % nCount + nCount) % nCount
@@ -241,12 +277,12 @@ class HighwayCanvasRenderer {
             if (s.ok) {
                 val sc1 = GameEngine.DEPTH / dz1
                 val sc2 = GameEngine.DEPTH / dz2
-                s.x1 = w * 0.5f - sc1 * (camXBase - x) * w * 0.5f
-                s.y1 = h * 0.5f - sc1 * (s.wy1 - camY) * h * 0.5f
-                s.w1 = sc1 * GameEngine.ROADW * w * 0.5f
-                s.x2 = w * 0.5f - sc2 * (camXBase - x - dx) * w * 0.5f
-                s.y2 = h * 0.5f - sc2 * (s.wy2 - camY) * h * 0.5f
-                s.w2 = sc2 * GameEngine.ROADW * w * 0.5f
+                s.x1 = w * 0.5f - sc1 * (camXBase - x) * projHalfW
+                s.y1 = horizon - sc1 * (s.wy1 - camY) * projHalfH
+                s.w1 = sc1 * GameEngine.ROADW * projHalfW
+                s.x2 = w * 0.5f - sc2 * (camXBase - x - dx) * projHalfW
+                s.y2 = horizon - sc2 * (s.wy2 - camY) * projHalfH
+                s.w2 = sc2 * GameEngine.ROADW * projHalfW
             }
             x += dx
             dx += s.curve
@@ -305,7 +341,13 @@ class HighwayCanvasRenderer {
         drawPath(reusableQuadPath, color)
     }
 
-    private fun DrawScope.drawSprites(engine: GameEngine, base: Int, w: Float) {
+    private fun DrawScope.drawSprites(
+        engine: GameEngine,
+        base: Int,
+        w: Float,
+        spriteScale: Float,
+        propHeightScale: Float
+    ) {
         val segs = engine.segments
         val nCount = segs.size
         val nightW = engine.palettes.stageW[1]
@@ -333,9 +375,9 @@ class HighwayCanvasRenderer {
             if (!s.ok) continue
 
             for (sp in s.sprites) {
-                drawRoadside(sp, s, nightW, sunW, w)
+                drawRoadside(sp, s, nightW, sunW, w, propHeightScale)
             }
-            if (i == 0) drawGantry(s, w)
+            if (i == 0) drawGantry(s, w, propHeightScale)
 
             val pBucket = pickupBuckets[n]
             for (b in pBucket.indices) {
@@ -343,7 +385,7 @@ class HighwayCanvasRenderer {
                 val pct = (p.z % GameEngine.SEG) / GameEngine.SEG
                 val px = lerp(s.x1, s.x2, pct) + lerp(s.w1, s.w2, pct) * p.offset
                 val py = lerp(s.y1, s.y2, pct)
-                val pw = lerp(s.w1, s.w2, pct) * 0.16f
+                val pw = lerp(s.w1, s.w2, pct) * 0.16f * spriteScale
                 if (pw < 3f) continue
                 clipped(s.clip, py - pw * 2f, py, w) {
                     drawPickup(p, px, py, pw, engine.simClockMs)
@@ -356,7 +398,7 @@ class HighwayCanvasRenderer {
                 val pct = (cc.z % GameEngine.SEG) / GameEngine.SEG
                 val cx = lerp(s.x1, s.x2, pct) + lerp(s.w1, s.w2, pct) * cc.offset
                 val cy = lerp(s.y1, s.y2, pct)
-                val cw = lerp(s.w1, s.w2, pct) * cc.widthNorm
+                val cw = lerp(s.w1, s.w2, pct) * cc.widthNorm * spriteScale
                 if (cw < 2f) continue
                 clipped(s.clip, cy - cw * cc.aspect, cy, w) {
                     drawVehicle(cc, cx, cy, cw, nightW)
@@ -488,15 +530,17 @@ class HighwayCanvasRenderer {
         s: TrackSegment,
         nightW: Float,
         sunW: Float,
-        w: Float
+        w: Float,
+        propHeightScale: Float
     ) {
         val cx = s.x1 + s.w1 * sp.offset
         val cy = s.y1
         val u = s.w1
+        val vUnit = u * propHeightScale
         when (sp.kind) {
             RoadsideSprite.POST -> {
-                val h = u * 0.14f
-                val pw = maxOf(1f, u * 0.016f)
+                val h = vUnit * 0.14f
+                val pw = maxOf(1f, vUnit * 0.016f)
                 clipped(s.clip, cy - h, cy, w) {
                     drawRect(Color(0xFFCFD6E4), Offset(cx - pw * 0.5f, cy - h), Size(pw, h))
                     val cap = if (nightW > 0.3f) Color(0xFFFFD34D) else Color(0xFFD24545)
@@ -504,83 +548,83 @@ class HighwayCanvasRenderer {
                 }
             }
             RoadsideSprite.LAMP -> {
-                val h = u * 0.85f
-                val lw = maxOf(1f, u * 0.02f)
+                val h = vUnit * 0.85f
+                val lw = maxOf(1f, vUnit * 0.022f)
+                val armScale = maxOf(0.65f, propHeightScale)
+                val armLen = u * 0.14f * armScale
                 val dir = if (sp.offset < 0f) 1f else -1f
                 clipped(s.clip, cy - h, cy, w) {
                     drawRect(Color(0xFF3A4152), Offset(cx - lw * 0.5f, cy - h), Size(lw, h))
-                    val armStart = if (dir > 0f) cx else cx + dir * u * 0.14f
-                    drawRect(Color(0xFF3A4152), Offset(armStart, cy - h), Size(u * 0.14f, maxOf(1f, u * 0.015f)))
-                    val lx = cx + dir * u * 0.14f
+                    val armStart = if (dir > 0f) cx else cx + dir * armLen
+                    drawRect(Color(0xFF3A4152), Offset(armStart, cy - h), Size(armLen, maxOf(1f, vUnit * 0.016f)))
+                    val lx = cx + dir * armLen
                     val bulbCol = if (nightW > 0.2f) Color(0xFFFFE9A8) else Color(0xFF8A93A6)
-                    drawRect(bulbCol, Offset(lx - u * 0.03f, cy - h), Size(u * 0.06f, maxOf(1.5f, u * 0.025f)))
+                    val bulbW = vUnit * 0.06f
+                    drawRect(bulbCol, Offset(lx - bulbW * 0.5f, cy - h), Size(bulbW, maxOf(1.5f, vUnit * 0.025f)))
                     if (nightW > 0.2f) {
-                        val gr = u * 0.2f
+                        val nAlpha = nightW.coerceIn(0f, 1f)
+                        val gr = vUnit * 0.22f
                         drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    Color(1f, 0.91f, 0.66f, (0.5f * nightW).coerceIn(0f, 1f)),
-                                    Color.Transparent
-                                ),
-                                center = Offset(lx, cy - h),
-                                radius = gr
-                            ),
+                            color = Color(1f, 0.91f, 0.66f, 0.15f * nAlpha),
                             radius = gr,
+                            center = Offset(lx, cy - h)
+                        )
+                        drawCircle(
+                            color = Color(1f, 0.91f, 0.66f, 0.30f * nAlpha),
+                            radius = gr * 0.5f,
                             center = Offset(lx, cy - h)
                         )
                     }
                 }
             }
             RoadsideSprite.PALM -> {
-                val h = u * 0.75f
-                val tw = maxOf(1.2f, u * 0.03f)
+                val h = vUnit * 0.75f
+                val tw = maxOf(1.2f, vUnit * 0.032f)
                 clipped(s.clip, cy - h, cy, w) {
                     val trunkCol = if (sunW > 0.4f) Color(0xFF2C1A38) else Color(0xFF22303A)
                     val leafCol = if (sunW > 0.4f) Color(0xFF3D2450) else Color(0xFF2C4048)
                     val topX = cx + tw * 1.2f
                     val topY = cy - h
-                    val trunkPath = Path().apply {
-                        moveTo(cx, cy)
-                        quadraticTo(cx + tw * 2f, cy - h * 0.6f, topX, topY)
-                    }
-                    drawPath(trunkPath, trunkCol, style = Stroke(width = tw))
+                    reusablePalmPath.reset()
+                    reusablePalmPath.moveTo(cx, cy)
+                    reusablePalmPath.quadraticTo(cx + tw * 2f, cy - h * 0.6f, topX, topY)
+                    drawPath(reusablePalmPath, trunkCol, style = Stroke(width = tw))
                     for (k in 0..4) {
                         val a = -0.4f - k * 0.5f
-                        val leafPath = Path().apply {
-                            moveTo(topX, topY)
-                            quadraticTo(
-                                topX + cos(a) * h * 0.3f,
-                                topY + sin(a) * h * 0.22f,
-                                topX + cos(a) * h * 0.42f,
-                                topY + sin(a) * h * 0.4f + h * 0.08f
-                            )
-                        }
-                        drawPath(leafPath, leafCol, style = Stroke(width = maxOf(1f, tw * 0.7f)))
+                        reusablePalmPath.reset()
+                        reusablePalmPath.moveTo(topX, topY)
+                        reusablePalmPath.quadraticTo(
+                            topX + cos(a) * h * 0.3f,
+                            topY + sin(a) * h * 0.22f,
+                            topX + cos(a) * h * 0.42f,
+                            topY + sin(a) * h * 0.4f + h * 0.08f
+                        )
+                        drawPath(reusablePalmPath, leafCol, style = Stroke(width = maxOf(1f, tw * 0.7f)))
                     }
                 }
             }
             RoadsideSprite.BILL -> {
-                val h = u * 0.6f
-                val bw = u * 0.5f
+                val h = vUnit * 0.6f
+                val bw = min(u * 0.5f, h * 0.85f)
                 clipped(s.clip, cy - h, cy, w) {
                     drawRect(Color(0xFF3A4152), Offset(cx - bw * 0.06f, cy - h * 0.5f), Size(bw * 0.12f, h * 0.5f))
                     drawRoundRect(
                         Color(0xFF141C2C),
                         Offset(cx - bw * 0.5f, cy - h),
                         Size(bw, h * 0.55f),
-                        CornerRadius(u * 0.02f)
+                        CornerRadius(vUnit * 0.02f)
                     )
                     val neon = if (nightW > 0.3f) Color(0xFF22E6FF) else Color(0xFFFF2D78)
                     drawRoundRect(
                         neon,
                         Offset(cx - bw * 0.5f, cy - h),
                         Size(bw, h * 0.55f),
-                        CornerRadius(u * 0.02f),
-                        style = Stroke(width = maxOf(1f, u * 0.012f))
+                        CornerRadius(vUnit * 0.02f),
+                        style = Stroke(width = maxOf(1f, vUnit * 0.014f))
                     )
-                    if (u > 40f) {
+                    if (vUnit > 34f) {
                         textPaint.color = if (nightW > 0.3f) 0xFF22E6FF.toInt() else 0xFFFF2D78.toInt()
-                        textPaint.textSize = maxOf(4f, u * 0.09f)
+                        textPaint.textSize = maxOf(4f, vUnit * 0.09f)
                         drawContext.canvas.nativeCanvas.drawText("NITRO", cx, cy - h * 0.66f, textPaint)
                     }
                 }
@@ -588,18 +632,19 @@ class HighwayCanvasRenderer {
         }
     }
 
-    private fun DrawScope.drawGantry(s: TrackSegment, w: Float) {
+    private fun DrawScope.drawGantry(s: TrackSegment, w: Float, propHeightScale: Float) {
         val u = s.w1
+        val vUnit = u * propHeightScale
         if (u < 3f) return
-        val ph = u * 0.75f
-        val pw = maxOf(1.5f, u * 0.05f)
+        val ph = vUnit * 0.75f
+        val pw = maxOf(1.5f, vUnit * 0.05f)
         val lx = s.x1 - u * 1.18f
         val rx = s.x1 + u * 1.18f
         val top = s.y1 - ph
         clipped(s.clip, top, s.y1, w) {
             drawRect(Color(0xFFD24545), Offset(lx - pw * 0.5f, top), Size(pw, ph))
             drawRect(Color(0xFFD24545), Offset(rx - pw * 0.5f, top), Size(pw, ph))
-            val bh = u * 0.16f
+            val bh = vUnit * 0.16f
             val cells = 10
             val cw2 = (rx - lx) / cells
             for (k in 0 until cells) {
@@ -609,9 +654,9 @@ class HighwayCanvasRenderer {
                     Size(cw2 + 0.5f, bh)
                 )
             }
-            if (u > 50f) {
+            if (vUnit > 40f) {
                 textPaint.color = 0xFF7EF07E.toInt()
-                textPaint.textSize = maxOf(4f, u * 0.07f)
+                textPaint.textSize = maxOf(4f, vUnit * 0.075f)
                 drawContext.canvas.nativeCanvas.drawText("CHECKPOINT", s.x1, top + bh * 0.72f, textPaint)
             }
         }
@@ -619,16 +664,30 @@ class HighwayCanvasRenderer {
 
     private data class BikeDrawInfo(val px: Float, val py: Float, val bh: Float, val bw: Float)
 
-    private fun DrawScope.drawPlayerBike(engine: GameEngine, w: Float, h: Float): BikeDrawInfo? {
-        val pct = engine.speed / GameEngine.MAXSP
-        val bh = (h * 0.155f).coerceIn(88f, 180f)
+    private fun DrawScope.drawPlayerBike(
+        engine: GameEngine,
+        w: Float,
+        h: Float,
+        isLandscape: Boolean
+    ): BikeDrawInfo? {
+        val pct = engine.normalizedBikeSpeed().coerceIn(0f, 1.4f)
+        val bh = if (isLandscape) {
+            (h * 0.20f).coerceIn(56f * density, h * 0.24f)
+        } else {
+            (h * 0.155f).coerceIn(88f, maxOf(180f, 60f * density))
+        }
         val bw = bh * 0.62f
-        val bounce = sin(engine.simClockMs * 0.03f) * pct * 2f +
-            (if (engine.offroad && pct > 0.2f) (Random.nextFloat() - 0.5f) * 5f else 0f)
-        val px = w * 0.5f + engine.steerVisual * w * 0.02f
-        val py = h * 0.965f + bounce
+        val bounce = sin(engine.simClockMs * 0.03f) * min(pct, 1.2f) * 2f +
+            (if (engine.offroad && engine.state != GameState.PAUSED && pct > 0.2f) (Random.nextFloat() - 0.5f) * 5f else 0f)
+        val px = w * 0.5f + engine.steerVisual * min(w, h) * 0.02f
+        val py = if (isLandscape) {
+            val bottomClearance = (66f * density).coerceIn(h * 0.12f, h * 0.22f)
+            h - bottomClearance + bounce
+        } else {
+            h * 0.965f + bounce
+        }
         val pSeg = engine.findSeg(engine.position + GameEngine.PLAYERZ)
-        var lean = engine.steerVisual * 0.42f + pSeg.curve * pct * 0.05f
+        var lean = engine.steerVisual * 0.42f + pSeg.curve * min(pct, 1.2f) * 0.05f
         if (engine.state == GameState.DYING) lean += engine.wreckRot
 
         drawOval(
@@ -769,13 +828,23 @@ class HighwayCanvasRenderer {
         return info
     }
 
-    private fun DrawScope.drawHeadlight(bike: BikeDrawInfo?, nightW: Float, w: Float, h: Float) {
+    private fun DrawScope.drawHeadlight(
+        bike: BikeDrawInfo?,
+        nightW: Float,
+        horizon: Float,
+        projHalfW: Float,
+        h: Float,
+        steerVisual: Float
+    ) {
         if (nightW < 0.05f || bike == null) return
+        val farY = horizon + h * 0.02f
+        val beamSpread = projHalfW * 0.44f
+        val beamCenter = bike.px + steerVisual * projHalfW * 0.12f
         reusableQuadPath.reset()
         reusableQuadPath.moveTo(bike.px - bike.bw * 0.2f, bike.py - bike.bh * 0.55f)
         reusableQuadPath.lineTo(bike.px + bike.bw * 0.2f, bike.py - bike.bh * 0.55f)
-        reusableQuadPath.lineTo(w * 0.8f, h * 0.52f)
-        reusableQuadPath.lineTo(w * 0.2f, h * 0.52f)
+        reusableQuadPath.lineTo(beamCenter + beamSpread, farY)
+        reusableQuadPath.lineTo(beamCenter - beamSpread, farY)
         reusableQuadPath.close()
         drawPath(
             path = reusableQuadPath,
@@ -785,7 +854,7 @@ class HighwayCanvasRenderer {
                     Color.Transparent
                 ),
                 startY = bike.py - bike.bh * 0.6f,
-                endY = h * 0.5f
+                endY = horizon
             )
         )
     }
@@ -793,7 +862,7 @@ class HighwayCanvasRenderer {
     private fun DrawScope.drawRain(engine: GameEngine, dt: Float, w: Float, h: Float) {
         val rainW = engine.palettes.stageW[2]
         if (rainW < 0.04f) return
-        val pct = engine.speed / GameEngine.MAXSP
+        val pct = engine.normalizedBikeSpeed().coerceIn(0f, 1.3f)
         val col = Color(0.78f, 0.86f, 0.94f, (0.26f * rainW).coerceIn(0f, 1f))
         for (r in engine.rainDrops) {
             if (engine.state != GameState.PAUSED) {
@@ -813,38 +882,49 @@ class HighwayCanvasRenderer {
     }
 
     private fun DrawScope.drawFx(engine: GameEngine, dt: Float, w: Float, h: Float) {
-        val pct = engine.speed / GameEngine.MAXSP
+        val pct = engine.normalizedBikeSpeed().coerceIn(0f, 1.3f)
         val intensity = maxOf(0f, (pct - 0.72f) * 3.5f) + (if (engine.nitroOn) 0.7f else 0f)
         if (intensity > 0.05f) {
             val lineCol = Color(0.86f, 0.94f, 1f, min(0.5f, intensity * 0.35f))
             val minDim = min(w, h)
+            val centerY = if (w > h) h * 0.41f else h * 0.45f
             for (l in engine.speedLines) {
-                l.life -= dt * 2.4f
-                if (l.life <= 0f) {
-                    l.angle = Random.nextFloat() * 6.284f
-                    l.r = 0.32f + Random.nextFloat() * 0.2f
-                    l.life = 0.4f + Random.nextFloat() * 0.6f
+                if (engine.state != GameState.PAUSED) {
+                    l.life -= dt * 2.4f
+                    if (l.life <= 0f) {
+                        l.angle = Random.nextFloat() * 6.284f
+                        l.r = 0.32f + Random.nextFloat() * 0.2f
+                        l.life = 0.4f + Random.nextFloat() * 0.6f
+                    }
                 }
+                if (l.life <= 0f) continue
                 val r0 = l.r * minDim * (1f + (1f - l.life) * 0.8f)
                 val len = (18f + intensity * 46f) * l.life
                 val ca = cos(l.angle)
                 val sa = sin(l.angle)
                 drawLine(
                     lineCol,
-                    Offset(w * 0.5f + ca * r0, h * 0.45f + sa * r0),
-                    Offset(w * 0.5f + ca * (r0 + len), h * 0.45f + sa * (r0 + len)),
+                    Offset(w * 0.5f + ca * r0, centerY + sa * r0),
+                    Offset(w * 0.5f + ca * (r0 + len), centerY + sa * (r0 + len)),
                     strokeWidth = 1.6f
                 )
             }
         }
 
-        // Vignette
+        // Vignette (cached per viewport dimensions)
+        val vignetteBrush = cachedVignetteBrush?.takeIf {
+            w == cachedVignetteW && h == cachedVignetteH
+        } ?: Brush.radialGradient(
+            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.42f)),
+            center = Offset(w * 0.5f, h * 0.48f),
+            radius = maxOf(w, h) * 0.78f
+        ).also {
+            cachedVignetteBrush = it
+            cachedVignetteW = w
+            cachedVignetteH = h
+        }
         drawRect(
-            brush = Brush.radialGradient(
-                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.42f)),
-                center = Offset(w * 0.5f, h * 0.48f),
-                radius = maxOf(w, h) * 0.78f
-            ),
+            brush = vignetteBrush,
             topLeft = Offset.Zero,
             size = Size(w, h)
         )

@@ -172,6 +172,12 @@ fun NitroRushApp(
             hud.gameState == GameState.DYING ||
             hud.gameState == GameState.PAUSED
 
+        LaunchedEffect(activeSheet, showRaceHud) {
+            if (activeSheet != ActiveSheet.NONE || !showRaceHud) {
+                vm.clearTouchInput()
+            }
+        }
+
         if (showRaceHud) {
             AdaptiveRacingHudAndControls(
                 hud = hud,

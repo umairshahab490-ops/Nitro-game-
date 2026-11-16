@@ -44,9 +44,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -485,6 +487,16 @@ private fun ControlPad(
     onPressedChange: (Boolean) -> Unit
 ) {
     var pressed by remember { mutableStateOf(false) }
+    val currentOnPressedChange by rememberUpdatedState(onPressedChange)
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (pressed) {
+                pressed = false
+                currentOnPressedChange(false)
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -500,15 +512,22 @@ private fun ControlPad(
                 shape = RoundedCornerShape(16.dp)
             )
             .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val isDown = event.changes.any { it.pressed }
-                        if (isDown != pressed) {
-                            pressed = isDown
-                            onPressedChange(isDown)
+                try {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val isDown = event.changes.any { it.pressed }
+                            if (isDown != pressed) {
+                                pressed = isDown
+                                currentOnPressedChange(isDown)
+                            }
+                            event.changes.forEach { it.consume() }
                         }
-                        event.changes.forEach { it.consume() }
+                    }
+                } finally {
+                    if (pressed) {
+                        pressed = false
+                        currentOnPressedChange(false)
                     }
                 }
             },

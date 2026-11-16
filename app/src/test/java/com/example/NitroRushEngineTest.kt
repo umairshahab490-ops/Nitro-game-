@@ -98,5 +98,81 @@ class NitroRushEngineTest {
         assertTrue(finishedSummary?.endReason == "TIME UP" || finishedSummary?.endReason == "WRECKED")
         assertTrue((finishedSummary?.usdEarned ?: 0) > 0)
         assertTrue((finishedSummary?.distanceMeters ?: 0) > 0)
+
+        val distAtOver = engine.distanceMeters
+        repeat(60) { engine.step(GameEngine.STEP) }
+        assertEquals(distAtOver, engine.distanceMeters, 0.001f)
+    }
+
+    @Test
+    fun gameEngine_rpmAndGearScaleWithBikeMaxSpeedWithoutWrappingOnNitro() {
+        val engine = GameEngine(object : GameEventCallbacks {
+            override fun onSound(sfx: SoundEffect) = Unit
+            override fun onHaptic(durationMs: Long, amplitude: Int) = Unit
+            override fun onBanner(text: String, colorArgb: Int) = Unit
+            override fun onRunFinished(summary: RunSummary) = Unit
+        })
+        val flagship = BikeCatalog.findById("ducati_panigale_v4s")
+        val maxed = BikeUpgradeState(engineLevel = 5, tiresLevel = 5, nitroLevel = 5)
+        engine.applyConfig(
+            difficulty = Difficulty.PRO,
+            gameMode = GameMode.ENDLESS,
+            trafficMode = TrafficMode.ONE_WAY,
+            bike = flagship,
+            upgrades = maxed,
+            route = PresetWorldRoutes.presets.first(),
+            tiltEnabled = false
+        )
+
+        val bikeMax = engine.effectiveBikeMaxSpeed()
+        assertTrue(bikeMax > GameEngine.MAXSP * 1.3f)
+
+        // At 50% of upgraded bikeMax, should not have prematurely hit Gear 6
+        engine.speed = bikeMax * 0.50f
+        assertTrue(engine.currentGear() in 3..4)
+
+        // Across top-gear and Nitro overboost (95%..145% of bikeMax), Gear stays 6 and RPM rises smoothly
+        engine.speed = bikeMax * 0.95f
+        assertEquals(6, engine.currentGear())
+        val rpm95 = engine.currentRpm()
+
+        engine.speed = bikeMax * 1.05f
+        assertEquals(6, engine.currentGear())
+        val rpm105 = engine.currentRpm()
+
+        engine.speed = bikeMax * 1.35f
+        assertEquals(6, engine.currentGear())
+        val rpm135 = engine.currentRpm()
+
+        assertTrue(rpm105 > rpm95)
+        assertTrue(rpm135 > rpm105)
+        assertTrue(rpm105 > 0.90f)
+    }
+
+    @Test
+    fun gameEngine_pauseAndResetClearAllTouchInputs() {
+        val engine = GameEngine(object : GameEventCallbacks {
+            override fun onSound(sfx: SoundEffect) = Unit
+            override fun onHaptic(durationMs: Long, amplitude: Int) = Unit
+            override fun onBanner(text: String, colorArgb: Int) = Unit
+            override fun onRunFinished(summary: RunSummary) = Unit
+        })
+        engine.startNewRun()
+        repeat(180) { engine.step(GameEngine.STEP) }
+        assertEquals(GameState.RUNNING, engine.state)
+
+        engine.touchLeft = true
+        engine.touchRight = true
+        engine.touchBrake = true
+        engine.touchNitro = true
+        engine.tiltSteer = 0.75f
+
+        engine.pause()
+        assertEquals(GameState.PAUSED, engine.state)
+        assertEquals(false, engine.touchLeft)
+        assertEquals(false, engine.touchRight)
+        assertEquals(false, engine.touchBrake)
+        assertEquals(false, engine.touchNitro)
+        assertEquals(0f, engine.tiltSteer, 0.0001f)
     }
 }
