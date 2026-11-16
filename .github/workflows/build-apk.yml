@@ -27,26 +27,71 @@ jobs:
           gradle-version: '9.3.1'
           cache-provider: basic
 
-      - name: Prepare Gradle wrapper and debug keystore
+      - name: Prepare Gradle wrapper, secrets, version, and debug keystore
+        env:
+          SECRET_DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+          SECRET_ENV_FILE: ${{ secrets.ENV_FILE }}
+          VAR_VERSION_CODE: ${{ vars.APP_VERSION_CODE }}
+          VAR_VERSION_CODE_OFFSET: ${{ vars.VERSION_CODE_OFFSET }}
+          VAR_VERSION_NAME: ${{ vars.APP_VERSION_NAME }}
         run: |
           if [ ! -f gradlew ]; then
             gradle wrapper --no-daemon
           fi
-          if [ ! -f debug.keystore ]; then
-            if [ -f debug.keystore.base64 ]; then
-              base64 -d debug.keystore.base64 > debug.keystore
-            else
-              keytool -genkeypair -noprompt \
-                -keystore debug.keystore \
-                -storepass android \
-                -alias androiddebugkey \
-                -keypass android \
-                -keyalg RSA \
-                -keysize 2048 \
-                -validity 10000 \
-                -dname "CN=Android Debug,O=Android,C=US"
-            fi
+
+          OFFSET="${VAR_VERSION_CODE_OFFSET:-10}"
+          if ! [[ "$OFFSET" =~ ^[0-9]+$ ]]; then
+            OFFSET=10
           fi
+
+          if [[ -n "$VAR_VERSION_CODE" && "$VAR_VERSION_CODE" =~ ^[0-9]+$ ]]; then
+            RESOLVED_VERSION_CODE="$VAR_VERSION_CODE"
+          else
+            RESOLVED_VERSION_CODE=$((OFFSET + GITHUB_RUN_NUMBER))
+          fi
+
+          if [[ -n "$VAR_VERSION_NAME" ]]; then
+            RESOLVED_VERSION_NAME="$VAR_VERSION_NAME"
+          else
+            RESOLVED_VERSION_NAME="1.1.${GITHUB_RUN_NUMBER}"
+          fi
+
+          {
+            echo "APP_VERSION_CODE=${RESOLVED_VERSION_CODE}"
+            echo "APP_VERSION_NAME=${RESOLVED_VERSION_NAME}"
+          } >> "$GITHUB_ENV"
+
+          if [ -n "$SECRET_ENV_FILE" ]; then
+            printf '%s\n' "$SECRET_ENV_FILE" > .env
+            echo "Restored .env from GitHub secret ENV_FILE."
+          fi
+
+          if [ -n "$SECRET_DEBUG_KEYSTORE_BASE64" ]; then
+            printf '%s' "$SECRET_DEBUG_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > debug.keystore
+            SIGNING_SOURCE="GitHub secret DEBUG_KEYSTORE_BASE64"
+          elif [ -f debug.keystore.base64 ]; then
+            tr -d '[:space:]' < debug.keystore.base64 | base64 -d > debug.keystore
+            SIGNING_SOURCE="repository debug.keystore.base64"
+          elif [ ! -f debug.keystore ]; then
+            echo "::warning::Neither DEBUG_KEYSTORE_BASE64 secret nor debug.keystore.base64 was found. Generating an ephemeral debug.keystore; this APK cannot update over builds signed with a different key."
+            keytool -genkeypair -noprompt \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+            SIGNING_SOURCE="ephemeral generated debug.keystore"
+          else
+            SIGNING_SOURCE="existing debug.keystore"
+          fi
+
+          CERT_SHA256=$(keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey 2>/dev/null | grep -m1 "SHA256:" | sed 's/^[[:space:]]*//' || true)
+          echo "Build version: ${RESOLVED_VERSION_NAME} (versionCode=${RESOLVED_VERSION_CODE})"
+          echo "Signing source: ${SIGNING_SOURCE} (${CERT_SHA256:-unknown})"
+
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           if [ -n "$SDK_ROOT" ]; then
             SDK_MANAGER=$(find "$SDK_ROOT/cmdline-tools" -maxdepth 3 -type f -name sdkmanager 2>/dev/null | head -n 1 || true)
@@ -61,7 +106,21 @@ jobs:
       - name: Build Debug APK
         run: |
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | tee /tmp/gradle-build.log
+          ./gradlew assembleDebug \
+            -PAPP_VERSION_CODE="${APP_VERSION_CODE}" \
+            -PAPP_VERSION_NAME="${APP_VERSION_NAME}" \
+            --no-daemon --stacktrace --console=plain 2>&1 | tee /tmp/gradle-build.log
+
+      - name: Publish build metadata to summary
+        if: success()
+        run: |
+          CERT_SHA256=$(keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey 2>/dev/null | grep -m1 "SHA256:" | sed 's/^[[:space:]]*//' || true)
+          {
+            echo "### Nitro Rush Debug APK Build"
+            echo "- **Version Name:** \`${APP_VERSION_NAME}\`"
+            echo "- **Version Code:** \`${APP_VERSION_CODE}\`"
+            echo "- **Signing Key:** \`${CERT_SHA256:-unknown}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Publish failure details to summary
         if: failure()

@@ -16,8 +16,18 @@ android {
     applicationId = "com.aistudio.nitrorush.xkqzpw"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode =
+      providers
+        .gradleProperty("APP_VERSION_CODE")
+        .orElse(providers.environmentVariable("APP_VERSION_CODE"))
+        .orNull
+        ?.toIntOrNull() ?: 2
+    versionName =
+      providers
+        .gradleProperty("APP_VERSION_NAME")
+        .orElse(providers.environmentVariable("APP_VERSION_NAME"))
+        .orNull
+        ?.takeIf { it.isNotBlank() } ?: "1.1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
