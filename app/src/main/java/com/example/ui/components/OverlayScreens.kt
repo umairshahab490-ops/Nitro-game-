@@ -607,14 +607,6 @@ fun RunOverOverlay(
 ) {
     BackHandler(onBack = onMenu)
 
-    val infinite = rememberInfiniteTransition(label = "newBest")
-    val pulse by infinite.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.08f,
-        animationSpec = infiniteRepeatable(tween(550), RepeatMode.Reverse),
-        label = "pulseBest"
-    )
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -647,18 +639,7 @@ fun RunOverOverlay(
                 color = DangerRed
             )
             if (isNewBest) {
-                Text(
-                    text = "★ NEW BEST ★",
-                    fontFamily = JetBrainsMonoFontFamily,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = ObsidianBg,
-                    modifier = Modifier
-                        .scale(pulse)
-                        .clip(CircleShape)
-                        .background(Brush.horizontalGradient(listOf(AmberGold, Color(0xFFFF9D2D))))
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
-                )
+                NewBestBadge()
             }
 
             summary?.let { s ->
@@ -724,6 +705,29 @@ fun RunOverOverlay(
             }
         }
     }
+}
+
+@Composable
+private fun NewBestBadge() {
+    val infinite = rememberInfiniteTransition(label = "newBest")
+    val pulse by infinite.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(tween(550), RepeatMode.Reverse),
+        label = "pulseBest"
+    )
+    Text(
+        text = "★ NEW BEST ★",
+        fontFamily = JetBrainsMonoFontFamily,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.ExtraBold,
+        color = ObsidianBg,
+        modifier = Modifier
+            .scale(pulse)
+            .clip(CircleShape)
+            .background(Brush.horizontalGradient(listOf(AmberGold, Color(0xFFFF9D2D))))
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+    )
 }
 
 @Composable

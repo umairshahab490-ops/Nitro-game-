@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
@@ -138,13 +139,10 @@ fun AdaptiveRacingHudAndControls(
     onTouchInput: (left: Boolean?, right: Boolean?, brake: Boolean?, nitro: Boolean?) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val infinite = rememberInfiniteTransition(label = "hudPulse")
-    val pulseScale by infinite.animateFloat(
-        initialValue = 1f,
-        targetValue = 1.12f,
-        animationSpec = infiniteRepeatable(tween(450), RepeatMode.Reverse),
-        label = "pulseScale"
-    )
+    val onLeftPress = remember(onTouchInput) { { pressed: Boolean -> onTouchInput(pressed, null, null, null) } }
+    val onRightPress = remember(onTouchInput) { { pressed: Boolean -> onTouchInput(null, pressed, null, null) } }
+    val onBrakePress = remember(onTouchInput) { { pressed: Boolean -> onTouchInput(null, null, pressed, null) } }
+    val onNitroPress = remember(onTouchInput) { { pressed: Boolean -> onTouchInput(null, null, null, pressed) } }
 
     BoxWithConstraints(
         modifier = modifier
@@ -222,13 +220,10 @@ fun AdaptiveRacingHudAndControls(
                     val sec = hud.elapsedSeconds.toInt()
                     String.format(Locale.US, "%d:%02d", sec / 60, sec % 60)
                 }
-                Text(
-                    text = timeDisplay,
-                    fontFamily = JetBrainsMonoFontFamily,
-                    fontSize = if (isLandscape) 28.sp else 34.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = if (isLow) DangerRed else TextPrimary,
-                    modifier = if (isLow) Modifier.scale(pulseScale) else Modifier
+                TimerDisplayText(
+                    timeDisplay = timeDisplay,
+                    isLandscape = isLandscape,
+                    isLow = isLow
                 )
                 if (hud.isDrafting) {
                     Text(
@@ -329,14 +324,14 @@ fun AdaptiveRacingHudAndControls(
                         icon = Icons.Default.ChevronLeft,
                         accent = BoostCyan,
                         modifier = Modifier.width(86.dp).height(68.dp).testTag("pad_left"),
-                        onPressedChange = { onTouchInput(it, null, null, null) }
+                        onPressedChange = onLeftPress
                     )
                     ControlPad(
                         label = "BRAKE",
                         icon = Icons.Default.KeyboardArrowDown,
                         accent = DangerRed,
                         modifier = Modifier.width(78.dp).height(68.dp).testTag("pad_brake"),
-                        onPressedChange = { onTouchInput(null, null, it, null) }
+                        onPressedChange = onBrakePress
                     )
                 }
 
@@ -354,14 +349,14 @@ fun AdaptiveRacingHudAndControls(
                         accent = BoostCyan,
                         dimmed = hud.nitroPercent <= 0f,
                         modifier = Modifier.width(78.dp).height(68.dp).testTag("pad_nitro"),
-                        onPressedChange = { onTouchInput(null, null, null, it) }
+                        onPressedChange = onNitroPress
                     )
                     ControlPad(
                         label = if (tiltEnabled) "TILT/R" else "RIGHT",
                         icon = Icons.Default.ChevronRight,
                         accent = BoostCyan,
                         modifier = Modifier.width(86.dp).height(68.dp).testTag("pad_right"),
-                        onPressedChange = { onTouchInput(null, it, null, null) }
+                        onPressedChange = onRightPress
                     )
                 }
             }
@@ -391,14 +386,14 @@ fun AdaptiveRacingHudAndControls(
                         icon = Icons.Default.ChevronLeft,
                         accent = BoostCyan,
                         modifier = Modifier.weight(1.25f).height(76.dp).testTag("pad_left"),
-                        onPressedChange = { onTouchInput(it, null, null, null) }
+                        onPressedChange = onLeftPress
                     )
                     ControlPad(
                         label = "BRAKE",
                         icon = Icons.Default.KeyboardArrowDown,
                         accent = DangerRed,
                         modifier = Modifier.weight(0.85f).height(76.dp).testTag("pad_brake"),
-                        onPressedChange = { onTouchInput(null, null, it, null) }
+                        onPressedChange = onBrakePress
                     )
                     ControlPad(
                         label = "NITRO",
@@ -406,18 +401,54 @@ fun AdaptiveRacingHudAndControls(
                         accent = BoostCyan,
                         dimmed = hud.nitroPercent <= 0f,
                         modifier = Modifier.weight(0.85f).height(76.dp).testTag("pad_nitro"),
-                        onPressedChange = { onTouchInput(null, null, null, it) }
+                        onPressedChange = onNitroPress
                     )
                     ControlPad(
                         label = if (tiltEnabled) "TILT/R" else "RIGHT",
                         icon = Icons.Default.ChevronRight,
                         accent = BoostCyan,
                         modifier = Modifier.weight(1.25f).height(76.dp).testTag("pad_right"),
-                        onPressedChange = { onTouchInput(null, it, null, null) }
+                        onPressedChange = onRightPress
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TimerDisplayText(
+    timeDisplay: String,
+    isLandscape: Boolean,
+    isLow: Boolean
+) {
+    if (isLow) {
+        val infinite = rememberInfiniteTransition(label = "hudPulse")
+        val pulseScale by infinite.animateFloat(
+            initialValue = 1f,
+            targetValue = 1.12f,
+            animationSpec = infiniteRepeatable(tween(450), RepeatMode.Reverse),
+            label = "pulseScale"
+        )
+        Text(
+            text = timeDisplay,
+            fontFamily = JetBrainsMonoFontFamily,
+            fontSize = if (isLandscape) 28.sp else 34.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = DangerRed,
+            modifier = Modifier.graphicsLayer {
+                scaleX = pulseScale
+                scaleY = pulseScale
+            }
+        )
+    } else {
+        Text(
+            text = timeDisplay,
+            fontFamily = JetBrainsMonoFontFamily,
+            fontSize = if (isLandscape) 28.sp else 34.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = TextPrimary
+        )
     }
 }
 

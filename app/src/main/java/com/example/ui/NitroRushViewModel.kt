@@ -26,6 +26,7 @@ import com.example.model.GameMode
 import com.example.model.GameState
 import com.example.model.GpsLocationState
 import com.example.model.MissionCatalog
+import com.example.model.MissionMetric
 import com.example.model.PresetWorldRoutes
 import com.example.model.RealRoadTrack
 import com.example.model.TrafficMode
@@ -57,8 +58,14 @@ data class HudUiState(
     val bonusCashUsd: Int = 0,
     val countdownLabel: String = "",
     val stageIndex: Int = 0,
-    val routeProgressNorm: Float = 0f
-)
+    val routeProgressNorm: Float = 0f,
+    val dailyMissions: List<DailyMission> = emptyList()
+) {
+    val activeMission: DailyMission?
+        get() = dailyMissions.firstOrNull { !it.isComplete && !it.claimed }
+            ?: dailyMissions.firstOrNull { !it.claimed }
+            ?: dailyMissions.firstOrNull()
+}
 
 data class BannerMessage(
     val id: Long,
@@ -116,6 +123,11 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
     private var hudFrameCounter = 0
     private var bannerSeq = 0L
     private var pendingScanOnFix = false
+    private var lastLiveNearMisses = -1
+    private var lastLiveDraftSeconds = -1
+    private var lastLiveTwoWayMeters = -1
+    private var lastLivePickups = -1
+    private var lastLiveTopSpeedKmh = -1
 
     init {
         audioEngine.start()
@@ -137,6 +149,7 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
                     route = route,
                     tiltEnabled = prefs.tiltEnabled
                 )
+                syncHudState(force = true)
             }
         }
 
@@ -163,6 +176,8 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
         if (locationTracker.hasLocationPermission()) {
             locationTracker.startUpdates()
         }
+
+        syncHudState(force = true)
     }
 
     fun stepSimulation(dt: Float, tiltSteer: Float) {
@@ -207,27 +222,13 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
         }
 
         hudFrameCounter++
-        if (hudFrameCounter % 2 == 0 || gameEngine.state != _hudState.value.gameState) {
-            val routeLen = gameEngine.activeRoute.lengthMeters.coerceAtLeast(1000)
-            _hudState.value = HudUiState(
-                gameState = gameEngine.state,
-                score = gameEngine.score.toInt(),
-                lives = gameEngine.lives,
-                timeLeft = gameEngine.timeLeft,
-                elapsedSeconds = gameEngine.elapsedRunSeconds,
-                distanceMeters = gameEngine.distanceMeters.toInt(),
-                speedKmh = (gameEngine.speed * GameEngine.KMH).toInt(),
-                gear = gameEngine.currentGear(),
-                nitroPercent = gameEngine.nitro,
-                nitroActive = gameEngine.nitroOn,
-                isDrafting = gameEngine.isDrafting,
-                hasShield = gameEngine.hasShield,
-                combo = gameEngine.combo,
-                bonusCashUsd = gameEngine.bonusCashUsd,
-                countdownLabel = gameEngine.countdownLabel,
-                stageIndex = gameEngine.stageIdx,
-                routeProgressNorm = (gameEngine.distanceMeters % routeLen) / routeLen.toFloat()
-            )
+        val missionMetricsChanged = didLiveMissionMetricsChange()
+        if (hudFrameCounter % 2 == 0 ||
+            gameEngine.state != _hudState.value.gameState ||
+            gameEngine.countdownLabel != _hudState.value.countdownLabel ||
+            missionMetricsChanged
+        ) {
+            syncHudState()
         }
     }
 
@@ -237,18 +238,22 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
         _bannerState.value = null
         gameEngine.clearTouchInputs()
         gameEngine.startNewRun()
+        hudFrameCounter = 0
+        syncHudState(force = true)
     }
 
     fun pauseGame() {
         gameEngine.clearTouchInputs()
         gameEngine.pause()
         audioEngine.paused = true
+        syncHudState(force = true)
     }
 
     fun resumeGame() {
         gameEngine.clearTouchInputs()
         gameEngine.resume()
         audioEngine.paused = false
+        syncHudState(force = true)
     }
 
     fun returnToMenu() {
@@ -256,6 +261,9 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
         _bannerState.value = null
         gameEngine.clearTouchInputs()
         gameEngine.returnToMenu()
+        audioEngine.paused = false
+        audioEngine.updateContinuous(0.28f, 0.22f, nitro = false, offroad = false, drafting = false)
+        syncHudState(force = true)
     }
 
     fun clearTouchInput() {
@@ -302,15 +310,89 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
         if (ok) haptics.pulse(20L, 140)
     }
 
-    fun currentDailyMissions(): List<DailyMission> {
+    fun currentDailyMissions(
+        includeLiveRun: Boolean = isRunInProgress(gameEngine.state)
+    ): List<DailyMission> {
         val day = currentEpochDay()
         val snap = prefsState.value
         val activeDay = snap.missionDay == day
         return MissionCatalog.dailyMissionsForDay(day).map { m ->
+            val savedProgress = if (activeDay) (snap.dailyProgress[m.metric] ?: 0) else 0
+            val liveProgress = if (includeLiveRun) {
+                val runValue = liveMissionMetricValue(m.metric)
+                if (m.metric == MissionMetric.TOP_SPEED_KMH) {
+                    maxOf(savedProgress, runValue)
+                } else {
+                    savedProgress + runValue
+                }
+            } else {
+                savedProgress
+            }
             m.copy(
-                progress = if (activeDay) (snap.dailyProgress[m.metric] ?: 0) else 0,
+                progress = liveProgress,
                 claimed = activeDay && m.id in snap.claimedDailyMissionIds
             )
+        }
+    }
+
+    private fun isRunInProgress(state: GameState): Boolean =
+        state == GameState.COUNTDOWN ||
+            state == GameState.RUNNING ||
+            state == GameState.PAUSED ||
+            state == GameState.DYING
+
+    private fun liveMissionMetricValue(metric: MissionMetric): Int = when (metric) {
+        MissionMetric.NEAR_MISSES -> gameEngine.nearMisses
+        MissionMetric.DRAFT_SECONDS -> gameEngine.draftSecondsAccum.toInt()
+        MissionMetric.TWO_WAY_METERS -> gameEngine.twoWayMeters.toInt()
+        MissionMetric.PICKUPS_COLLECTED -> gameEngine.pickupsCollected
+        MissionMetric.TOP_SPEED_KMH -> gameEngine.topSpeedKmh.toInt()
+        MissionMetric.RUNS_COMPLETED -> 0
+    }
+
+    private fun didLiveMissionMetricsChange(): Boolean {
+        val nearMisses = gameEngine.nearMisses
+        val draftSec = gameEngine.draftSecondsAccum.toInt()
+        val twoWay = gameEngine.twoWayMeters.toInt()
+        val pickups = gameEngine.pickupsCollected
+        val topSpeed = gameEngine.topSpeedKmh.toInt()
+        return nearMisses != lastLiveNearMisses ||
+            draftSec != lastLiveDraftSeconds ||
+            twoWay != lastLiveTwoWayMeters ||
+            pickups != lastLivePickups ||
+            topSpeed != lastLiveTopSpeedKmh
+    }
+
+    private fun syncHudState(force: Boolean = false) {
+        val routeLen = gameEngine.activeRoute.lengthMeters.coerceAtLeast(1000)
+        lastLiveNearMisses = gameEngine.nearMisses
+        lastLiveDraftSeconds = gameEngine.draftSecondsAccum.toInt()
+        lastLiveTwoWayMeters = gameEngine.twoWayMeters.toInt()
+        lastLivePickups = gameEngine.pickupsCollected
+        lastLiveTopSpeedKmh = gameEngine.topSpeedKmh.toInt()
+
+        val next = HudUiState(
+            gameState = gameEngine.state,
+            score = gameEngine.score.toInt(),
+            lives = gameEngine.lives,
+            timeLeft = gameEngine.timeLeft,
+            elapsedSeconds = gameEngine.elapsedRunSeconds,
+            distanceMeters = gameEngine.distanceMeters.toInt(),
+            speedKmh = (gameEngine.speed * GameEngine.KMH).toInt(),
+            gear = gameEngine.currentGear(),
+            nitroPercent = gameEngine.nitro,
+            nitroActive = gameEngine.nitroOn,
+            isDrafting = gameEngine.isDrafting,
+            hasShield = gameEngine.hasShield,
+            combo = gameEngine.combo,
+            bonusCashUsd = gameEngine.bonusCashUsd,
+            countdownLabel = gameEngine.countdownLabel,
+            stageIndex = gameEngine.stageIdx,
+            routeProgressNorm = (gameEngine.distanceMeters % routeLen) / routeLen.toFloat(),
+            dailyMissions = currentDailyMissions(includeLiveRun = isRunInProgress(gameEngine.state))
+        )
+        if (force || next != _hudState.value) {
+            _hudState.value = next
         }
     }
 
@@ -441,9 +523,12 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
 
     override fun onRunFinished(summary: RunSummary) {
         gameEngine.clearTouchInputs()
+        audioEngine.paused = false
+        audioEngine.updateContinuous(0.28f, 0.22f, nitro = false, offroad = false, drafting = false)
         val prevBest = prefsState.value.bestScore
         _isNewBestRun.value = summary.score > prevBest
         _lastRunSummary.value = summary
+        syncHudState(force = true)
         viewModelScope.launch {
             repository.saveRunAndPayout(
                 score = summary.score,
