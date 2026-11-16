@@ -1,0 +1,6 @@
+{
+  "name": "Nitro Rush",
+  "description": "High-speed 60 FPS motorbike highway racer with real-world USD bikes, real-time GPS tracking, and live OpenStreetMap highway routes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
