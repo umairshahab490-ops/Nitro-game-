@@ -115,6 +115,7 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
 
     private var hudFrameCounter = 0
     private var bannerSeq = 0L
+    private var pendingScanOnFix = false
 
     init {
         audioEngine.start()
@@ -150,6 +151,10 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
                             liveGpsActive = true,
                             statusMessage = "GPS locked (±${reading.accuracyMeters.toInt()}m)"
                         )
+                    }
+                    if (pendingScanOnFix) {
+                        pendingScanOnFix = false
+                        scanNearbyHighways()
                     }
                 }
             }
@@ -340,9 +345,11 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
         locationTracker.startUpdates()
         val reading = locationTracker.reading.value
         if (reading == null) {
-            _gpsState.update { it.copy(permissionGranted = true, statusMessage = "Waiting for GPS lock… move near a window or retry") }
+            pendingScanOnFix = true
+            _gpsState.update { it.copy(permissionGranted = true, statusMessage = "Acquiring GPS lock… will scan nearby roads automatically") }
             return
         }
+        pendingScanOnFix = false
 
         viewModelScope.launch {
             _gpsState.update {

@@ -56,6 +56,18 @@ class LocationTracker(private val context: Context) {
             }
         }
 
+        fusedClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+            .addOnSuccessListener { loc ->
+                if (loc != null) {
+                    _reading.value = LiveGpsReading(
+                        latitude = loc.latitude,
+                        longitude = loc.longitude,
+                        accuracyMeters = loc.accuracy,
+                        timestampMillis = loc.time
+                    )
+                }
+            }
+
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000L)
             .setMinUpdateIntervalMillis(1500L)
             .build()
