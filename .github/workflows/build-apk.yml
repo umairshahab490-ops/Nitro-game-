@@ -32,8 +32,20 @@ jobs:
           if [ ! -f gradlew ]; then
             gradle wrapper --no-daemon
           fi
-          if [ ! -f debug.keystore ] && [ -f debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
+          if [ ! -f debug.keystore ]; then
+            if [ -f debug.keystore.base64 ]; then
+              base64 -d debug.keystore.base64 > debug.keystore
+            else
+              keytool -genkeypair -noprompt \
+                -keystore debug.keystore \
+                -storepass android \
+                -alias androiddebugkey \
+                -keypass android \
+                -keyalg RSA \
+                -keysize 2048 \
+                -validity 10000 \
+                -dname "CN=Android Debug,O=Android,C=US"
+            fi
           fi
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           if [ -n "$SDK_ROOT" ]; then
@@ -65,7 +77,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           if [ -f /tmp/gradle-build.log ]; then
-            ERR_SUMMARY=$(grep -m1 -E "(^FAILURE:|^> |^e: |Exception:|Error:)" /tmp/gradle-build.log | head -n 1 | tr -d '\r' || true)
+            ERR_SUMMARY=$(grep -m1 -E "(^Caused by:|^FAILURE:|^e: |Exception:|Error:)" /tmp/gradle-build.log | head -n 1 | tr -d '\r' || true)
             if [ -z "$ERR_SUMMARY" ]; then
               ERR_SUMMARY=$(tail -n 1 /tmp/gradle-build.log | tr -d '\r')
             fi
