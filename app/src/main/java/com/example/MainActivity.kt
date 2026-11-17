@@ -41,8 +41,10 @@ import com.example.ui.components.GarageSheet
 import com.example.ui.components.GpsMapSheet
 import com.example.ui.components.MainMenuOverlay
 import com.example.ui.components.MissionsAndRunsSheet
+import com.example.ui.components.PaddockNavTab
 import com.example.ui.components.PauseOverlay
 import com.example.ui.components.RunOverOverlay
+import com.example.ui.components.SettingsSheet
 import com.example.ui.components.TopUtilityButtons
 import com.example.ui.theme.NitroRushTheme
 import com.example.ui.theme.ObsidianBg
@@ -53,7 +55,8 @@ private enum class ActiveSheet {
     NONE,
     GARAGE,
     MISSIONS,
-    GPS_MAP
+    GPS_MAP,
+    SETTINGS
 }
 
 class MainActivity : ComponentActivity() {
@@ -176,7 +179,7 @@ fun NitroRushApp(
     }
 
     // Render one static frame when gameplay stops or visual config changes while idle/visible.
-    LaunchedEffect(isFrameLoopActive, gameState, activeSheet, activeRoute.id, prefs.equippedBikeId) {
+    LaunchedEffect(isFrameLoopActive, gameState, activeSheet, activeRoute.id, prefs.equippedBikeId, prefs.bikePaintIds) {
         if (!isFrameLoopActive && activeSheet == ActiveSheet.NONE) {
             lastDtRef[0] = 0f
             frameTick = frameTick + 1L
@@ -222,14 +225,10 @@ fun NitroRushApp(
                 prefs = prefs,
                 activeRoute = activeRoute,
                 claimableMissionCount = claimableCount,
-                tiltAvailable = tiltAvailable,
-                onSelectDifficulty = { vm.setDifficulty(it) },
-                onSelectGameMode = { vm.setGameMode(it) },
-                onSelectTrafficMode = { vm.setTrafficMode(it) },
-                onToggleTilt = { vm.toggleTilt() },
                 onOpenGarage = { activeSheet = ActiveSheet.GARAGE },
                 onOpenMissions = { activeSheet = ActiveSheet.MISSIONS },
                 onOpenGpsMap = { activeSheet = ActiveSheet.GPS_MAP },
+                onOpenSettings = { activeSheet = ActiveSheet.SETTINGS },
                 onStartRide = { vm.startRun() }
             )
         }
@@ -269,12 +268,23 @@ fun NitroRushApp(
             )
         }
 
+        val navigateFromTab: (PaddockNavTab) -> Unit = { tab ->
+            activeSheet = when (tab) {
+                PaddockNavTab.HOME -> ActiveSheet.NONE
+                PaddockNavTab.GARAGE -> ActiveSheet.GARAGE
+                PaddockNavTab.MISSIONS -> ActiveSheet.MISSIONS
+                PaddockNavTab.SETTINGS -> ActiveSheet.SETTINGS
+            }
+        }
+
         when (activeSheet) {
             ActiveSheet.GARAGE -> GarageSheet(
                 prefs = prefs,
                 onBuyBike = { vm.buyBike(it) },
                 onEquipBike = { vm.equipBike(it) },
                 onUpgradeBike = { bike, stat -> vm.upgradeBike(bike, stat) },
+                onSelectPaint = { bikeId, paintId -> vm.setBikePaint(bikeId, paintId) },
+                onNavigateTab = navigateFromTab,
                 onClose = { activeSheet = ActiveSheet.NONE }
             )
             ActiveSheet.MISSIONS -> {
@@ -283,8 +293,10 @@ fun NitroRushApp(
                     dailyMissions = dailyMissions,
                     milestones = milestones,
                     topRuns = topRuns,
+                    usdBalance = prefs.usdBalance,
                     onClaimDailyMission = { vm.claimDailyMission(it) },
                     onClaimMilestone = { vm.claimMilestone(it) },
+                    onNavigateTab = navigateFromTab,
                     onClose = { activeSheet = ActiveSheet.NONE }
                 )
             }
@@ -292,6 +304,7 @@ fun NitroRushApp(
                 gpsState = gpsState,
                 routes = routes,
                 activeRouteId = activeRoute.id,
+                usdBalance = prefs.usdBalance,
                 onRequestGpsAndScan = {
                     if (gpsState.permissionGranted) {
                         vm.scanNearbyHighways()
@@ -305,6 +318,21 @@ fun NitroRushApp(
                     }
                 },
                 onSelectRoute = { vm.selectRoute(it) },
+                onStartRace = {
+                    activeSheet = ActiveSheet.NONE
+                    vm.startRun()
+                },
+                onClose = { activeSheet = ActiveSheet.NONE }
+            )
+            ActiveSheet.SETTINGS -> SettingsSheet(
+                prefs = prefs,
+                tiltAvailable = tiltAvailable,
+                onSelectDifficulty = { vm.setDifficulty(it) },
+                onSelectGameMode = { vm.setGameMode(it) },
+                onSelectTrafficMode = { vm.setTrafficMode(it) },
+                onToggleTilt = { vm.toggleTilt() },
+                onToggleMute = { vm.toggleMute() },
+                onNavigateTab = navigateFromTab,
                 onClose = { activeSheet = ActiveSheet.NONE }
             )
             ActiveSheet.NONE -> Unit

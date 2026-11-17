@@ -151,6 +151,36 @@ object BikeCatalog {
 
     fun findById(id: String): BikeModel = bikes.firstOrNull { it.id == id } ?: bikes.first()
 
+    fun withPaint(bike: BikeModel, paintId: String?): BikeModel {
+        val swatch = BikePaintCatalog.findById(paintId) ?: return bike
+        return if (swatch.id == BikePaintCatalog.STOCK_ID) {
+            bike
+        } else {
+            bike.copy(
+                primaryColor = swatch.primaryColor,
+                trimColor = swatch.trimColor,
+                accentColor = swatch.accentColor
+            )
+        }
+    }
+
+    fun tierAndRating(bike: BikeModel, upgrades: BikeUpgradeState): Pair<String, Float> {
+        val avgStat = (
+            effectiveTopSpeedMult(bike, upgrades) +
+                effectiveAccelMult(bike, upgrades) +
+                effectiveGripMult(bike, upgrades) +
+                effectiveNitroRechargeMult(bike, upgrades)
+            ) / 4f
+        val rating = (3.4f + (avgStat - 1.0f) * 3.1f).coerceIn(3.5f, 5.0f)
+        val tier = when {
+            avgStat >= 1.34f -> "S+"
+            avgStat >= 1.22f -> "S"
+            avgStat >= 1.12f -> "A"
+            else -> "B"
+        }
+        return tier to rating
+    }
+
     fun upgradeCostUsd(bike: BikeModel, currentLevel: Int): Int {
         if (currentLevel >= MAX_UPGRADE_LEVEL) return 0
         val tierScale = (bike.msrpUsd / 5499f).coerceIn(1f, 2.6f)
@@ -177,4 +207,64 @@ object BikeCatalog {
 
     fun effectiveNitroBurnRateScale(upgrades: BikeUpgradeState): Float =
         1f - (upgrades.nitroLevel - 1) * 0.08f
+}
+
+data class BikePaintSwatch(
+    val id: String,
+    val label: String,
+    val primaryColor: Int,
+    val trimColor: Int,
+    val accentColor: Int
+)
+
+object BikePaintCatalog {
+    const val STOCK_ID = "stock"
+
+    val swatches: List<BikePaintSwatch> = listOf(
+        BikePaintSwatch(
+            id = STOCK_ID,
+            label = "FACTORY",
+            primaryColor = 0xFF64748B.toInt(),
+            trimColor = 0xFF334155.toInt(),
+            accentColor = 0xFF22E6FF.toInt()
+        ),
+        BikePaintSwatch(
+            id = "crimson_track",
+            label = "CRIMSON",
+            primaryColor = 0xFFE81C5A.toInt(),
+            trimColor = 0xFF8A0D32.toInt(),
+            accentColor = 0xFF22E6FF.toInt()
+        ),
+        BikePaintSwatch(
+            id = "venom_lime",
+            label = "VENOM LIME",
+            primaryColor = 0xFF39D353.toInt(),
+            trimColor = 0xFF167A27.toInt(),
+            accentColor = 0xFFFFD34D.toInt()
+        ),
+        BikePaintSwatch(
+            id = "electric_cyan",
+            label = "CYBER CYAN",
+            primaryColor = 0xFF19D4EA.toInt(),
+            trimColor = 0xFF0A6A80.toInt(),
+            accentColor = 0xFFEEF2FF.toInt()
+        ),
+        BikePaintSwatch(
+            id = "midnight_stealth",
+            label = "STEALTH",
+            primaryColor = 0xFF2E374A.toInt(),
+            trimColor = 0xFF141923.toInt(),
+            accentColor = 0xFFE81C5A.toInt()
+        ),
+        BikePaintSwatch(
+            id = "solar_gold",
+            label = "SOLAR GOLD",
+            primaryColor = 0xFFFFB020.toInt(),
+            trimColor = 0xFF995A00.toInt(),
+            accentColor = 0xFF22E6FF.toInt()
+        )
+    )
+
+    fun findById(id: String?): BikePaintSwatch? =
+        swatches.firstOrNull { it.id == id }
 }

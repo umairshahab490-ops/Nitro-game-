@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -26,22 +27,38 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.EmojiEvents
-import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,7 +74,10 @@ import com.example.ui.HudUiState
 import com.example.ui.theme.AmberGold
 import com.example.ui.theme.BoostCyan
 import com.example.ui.theme.CashGreen
+import com.example.ui.theme.CharcoalBg
 import com.example.ui.theme.DangerRed
+import com.example.ui.theme.ElectricBlueEnd
+import com.example.ui.theme.ElectricBlueStart
 import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.ui.theme.NeonPink
 import com.example.ui.theme.OrbitronFontFamily
@@ -85,10 +105,9 @@ fun LandscapeRacingHudAndControls(
 ) {
     val isCompactHeight = maxHeight < 380.dp
     val isCompactWidth = maxWidth < 700.dp
-    val padW = if (isCompactWidth) 82.dp else 94.dp
-    val padH = if (isCompactHeight) 60.dp else 68.dp
-    val padGap = if (isCompactWidth) 8.dp else 10.dp
-    val edgeMargin = if (isCompactWidth) 10.dp else 14.dp
+    val circleDiameter = if (isCompactHeight) 56.dp else 64.dp
+    val padGap = if (isCompactWidth) 10.dp else 14.dp
+    val edgeMargin = if (isCompactWidth) 12.dp else 16.dp
     val bottomMargin = if (isCompactHeight) 8.dp else 12.dp
 
     Box(
@@ -102,7 +121,7 @@ fun LandscapeRacingHudAndControls(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(start = edgeMargin, top = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             LandscapeTelemetryCard(
                 hud = hud,
@@ -177,15 +196,16 @@ fun LandscapeRacingHudAndControls(
         if (hud.gameState == GameState.COUNTDOWN && hud.countdownLabel.isNotEmpty()) {
             Text(
                 text = hud.countdownLabel,
-                fontFamily = JetBrainsMonoFontFamily,
+                fontFamily = OrbitronFontFamily,
                 fontSize = if (isCompactHeight) 72.sp else 84.sp,
-                fontWeight = FontWeight.ExtraBold,
+                fontWeight = FontWeight.Black,
+                fontStyle = FontStyle.Italic,
                 color = NeonPink,
                 modifier = Modifier.align(Alignment.Center)
             )
         }
 
-        // Bottom-Left: Dedicated Left/Right Ergonomic Steering Deck
+        // Bottom-Left: Circular Frosted-Glass Left/Right Steering Pedals matching mockup
         Row(
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -193,29 +213,25 @@ fun LandscapeRacingHudAndControls(
             horizontalArrangement = Arrangement.spacedBy(padGap),
             verticalAlignment = Alignment.Bottom
         ) {
-            ControlPad(
-                label = if (tiltEnabled) "TILT/L" else "LEFT",
+            CircularControlPedal(
+                contentDesc = if (tiltEnabled) "Tilt or Steer Left" else "Steer Left",
                 icon = Icons.Default.ChevronLeft,
                 accent = BoostCyan,
-                modifier = Modifier
-                    .width(padW)
-                    .height(padH)
-                    .testTag("pad_left"),
+                sizeDp = circleDiameter,
+                modifier = Modifier.testTag("pad_left"),
                 onPressedChange = onLeftPress
             )
-            ControlPad(
-                label = if (tiltEnabled) "TILT/R" else "RIGHT",
+            CircularControlPedal(
+                contentDesc = if (tiltEnabled) "Tilt or Steer Right" else "Steer Right",
                 icon = Icons.Default.ChevronRight,
                 accent = BoostCyan,
-                modifier = Modifier
-                    .width(padW)
-                    .height(padH)
-                    .testTag("pad_right"),
+                sizeDp = circleDiameter,
+                modifier = Modifier.testTag("pad_right"),
                 onPressedChange = onRightPress
             )
         }
 
-        // Bottom-Right: Cockpit Speedometer & Nitro Gauge positioned above Brake / Nitro Pedals
+        // Bottom-Right: Sleek Speedometer + Gear + N₂O bar above Circular Brake & N₂O Bottle Pedals
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -230,7 +246,7 @@ fun LandscapeRacingHudAndControls(
                 nitroActive = hud.nitroActive,
                 compact = isCompactHeight,
                 modifier = Modifier
-                    .width(padW * 2 + padGap)
+                    .width(circleDiameter * 2 + padGap + 16.dp)
                     .testTag("landscape_speed_panel")
             )
 
@@ -238,29 +254,192 @@ fun LandscapeRacingHudAndControls(
                 horizontalArrangement = Arrangement.spacedBy(padGap),
                 verticalAlignment = Alignment.Bottom
             ) {
-                ControlPad(
-                    label = "BRAKE",
-                    icon = Icons.Default.KeyboardArrowDown,
+                CircularControlPedal(
+                    contentDesc = "Brake",
+                    icon = Icons.Default.RadioButtonChecked,
                     accent = DangerRed,
-                    modifier = Modifier
-                        .width(padW)
-                        .height(padH)
-                        .testTag("pad_brake"),
+                    sizeDp = circleDiameter,
+                    modifier = Modifier.testTag("pad_brake"),
                     onPressedChange = onBrakePress
                 )
-                ControlPad(
-                    label = "NITRO",
-                    icon = Icons.Default.Bolt,
-                    accent = BoostCyan,
-                    dimmed = hud.nitroPercent <= 0f,
-                    modifier = Modifier
-                        .width(padW)
-                        .height(padH)
-                        .testTag("pad_nitro"),
+                CircularNitroBottlePedal(
+                    nitroPercent = hud.nitroPercent,
+                    nitroActive = hud.nitroActive,
+                    sizeDp = circleDiameter,
+                    modifier = Modifier.testTag("pad_nitro"),
                     onPressedChange = onNitroPress
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun CircularControlPedal(
+    contentDesc: String,
+    icon: ImageVector,
+    accent: Color,
+    sizeDp: Dp,
+    modifier: Modifier = Modifier,
+    onPressedChange: (Boolean) -> Unit
+) {
+    var pressed by remember { mutableStateOf(false) }
+    val currentOnPressedChange by rememberUpdatedState(onPressedChange)
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (pressed) {
+                pressed = false
+                currentOnPressedChange(false)
+            }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .size(sizeDp)
+            .scale(if (pressed) 0.92f else 1f)
+            .clip(CircleShape)
+            .background(if (pressed) accent.copy(alpha = 0.28f) else Color(0xB80E1525))
+            .border(
+                width = if (pressed) 2.dp else 1.4.dp,
+                color = if (pressed) accent else Color.White.copy(alpha = 0.34f),
+                shape = CircleShape
+            )
+            .semantics {
+                role = Role.Button
+                contentDescription = contentDesc
+            }
+            .pointerInput(Unit) {
+                try {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val isDown = event.changes.any { it.pressed }
+                            if (isDown != pressed) {
+                                pressed = isDown
+                                currentOnPressedChange(isDown)
+                            }
+                            event.changes.forEach { it.consume() }
+                        }
+                    }
+                } finally {
+                    if (pressed) {
+                        pressed = false
+                        currentOnPressedChange(false)
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDesc,
+            tint = if (pressed) accent else Color.White,
+            modifier = Modifier.size(sizeDp * 0.52f)
+        )
+    }
+}
+
+@Composable
+private fun CircularNitroBottlePedal(
+    nitroPercent: Float,
+    nitroActive: Boolean,
+    sizeDp: Dp,
+    modifier: Modifier = Modifier,
+    onPressedChange: (Boolean) -> Unit
+) {
+    var pressed by remember { mutableStateOf(false) }
+    val currentOnPressedChange by rememberUpdatedState(onPressedChange)
+    val empty = nitroPercent <= 0f
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (pressed) {
+                pressed = false
+                currentOnPressedChange(false)
+            }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .size(sizeDp)
+            .scale(if (pressed) 0.92f else 1f)
+            .alpha(if (empty && !pressed) 0.50f else 1f)
+            .clip(CircleShape)
+            .background(
+                Brush.radialGradient(
+                    listOf(
+                        if (pressed || nitroActive) BoostCyan.copy(alpha = 0.72f) else ElectricBlueStart.copy(alpha = 0.36f),
+                        ElectricBlueEnd.copy(alpha = 0.55f),
+                        CharcoalBg.copy(alpha = 0.92f)
+                    )
+                )
+            )
+            .border(
+                width = if (pressed || nitroActive) 2.2.dp else 1.6.dp,
+                color = if (pressed || nitroActive) Color.White else BoostCyan.copy(alpha = 0.85f),
+                shape = CircleShape
+            )
+            .semantics {
+                role = Role.Button
+                contentDescription = "Nitro Boost"
+            }
+            .pointerInput(Unit) {
+                try {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val isDown = event.changes.any { it.pressed }
+                            if (isDown != pressed) {
+                                pressed = isDown
+                                currentOnPressedChange(isDown)
+                            }
+                            event.changes.forEach { it.consume() }
+                        }
+                    }
+                } finally {
+                    if (pressed) {
+                        pressed = false
+                        currentOnPressedChange(false)
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(sizeDp * 0.54f)) {
+            val w = size.width
+            val h = size.height
+            // Valve neck
+            drawRoundRect(
+                color = Color(0xFFE2E8F0),
+                topLeft = Offset(w * 0.38f, h * 0.04f),
+                size = Size(w * 0.24f, h * 0.14f),
+                cornerRadius = CornerRadius(3f)
+            )
+            // Cylinder shoulder + tank
+            drawRoundRect(
+                color = BoostCyan,
+                topLeft = Offset(w * 0.24f, h * 0.18f),
+                size = Size(w * 0.52f, h * 0.76f),
+                cornerRadius = CornerRadius(w * 0.22f)
+            )
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.45f),
+                topLeft = Offset(w * 0.31f, h * 0.26f),
+                size = Size(w * 0.09f, h * 0.54f),
+                cornerRadius = CornerRadius(4f)
+            )
+        }
+        Text(
+            text = "N₂O",
+            fontFamily = OrbitronFontFamily,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Black,
+            color = CharcoalBg,
+            modifier = Modifier.padding(top = 6.dp)
+        )
     }
 }
 
@@ -272,44 +451,34 @@ private fun LandscapeTelemetryCard(
 ) {
     Column(
         modifier = Modifier
-            .widthIn(min = 172.dp, max = 232.dp)
+            .widthIn(min = 164.dp, max = 224.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(PanelDark)
-            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(14.dp))
-            .padding(horizontal = 11.dp, vertical = if (compact) 6.dp else 8.dp)
+            .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 10.dp, vertical = if (compact) 5.dp else 7.dp)
             .testTag("landscape_telemetry_panel"),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Top
         ) {
             Column {
-                Text(
-                    text = "SCORE",
-                    fontFamily = JetBrainsMonoFontFamily,
-                    fontSize = 8.sp,
-                    color = TextMuted
-                )
+                Text("SCORE", fontFamily = JetBrainsMonoFontFamily, fontSize = 8.sp, color = TextMuted)
                 Text(
                     text = String.format(Locale.US, "%,d", hud.score),
-                    fontFamily = JetBrainsMonoFontFamily,
-                    fontSize = if (compact) 15.sp else 17.sp,
-                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = OrbitronFontFamily,
+                    fontSize = if (compact) 14.sp else 16.sp,
+                    fontWeight = FontWeight.Black,
                     color = TextPrimary
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "DISTANCE",
-                    fontFamily = JetBrainsMonoFontFamily,
-                    fontSize = 8.sp,
-                    color = TextMuted
-                )
+                Text("DISTANCE", fontFamily = JetBrainsMonoFontFamily, fontSize = 8.sp, color = TextMuted)
                 Text(
                     text = formatDist(hud.distanceMeters),
                     fontFamily = JetBrainsMonoFontFamily,
-                    fontSize = if (compact) 13.sp else 14.sp,
+                    fontSize = if (compact) 12.sp else 13.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = BoostCyan
                 )
@@ -323,7 +492,7 @@ private fun LandscapeTelemetryCard(
             for (i in 0 until 3) {
                 Box(
                     modifier = Modifier
-                        .size(9.dp)
+                        .size(8.dp)
                         .clip(CircleShape)
                         .background(
                             if (i < hud.lives) NeonPink else Color.White.copy(alpha = 0.16f)
@@ -335,14 +504,14 @@ private fun LandscapeTelemetryCard(
                     imageVector = Icons.Default.Shield,
                     contentDescription = "Shield Active",
                     tint = BoostCyan,
-                    modifier = Modifier.size(13.dp)
+                    modifier = Modifier.size(12.dp)
                 )
             }
             if (hud.bonusCashUsd > 0) {
                 Text(
                     text = "+$${hud.bonusCashUsd}",
                     fontFamily = JetBrainsMonoFontFamily,
-                    fontSize = 10.sp,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = CashGreen
                 )
@@ -351,7 +520,7 @@ private fun LandscapeTelemetryCard(
             Text(
                 text = "BEST ${String.format(Locale.US, "%,d", bestScore)}",
                 fontFamily = JetBrainsMonoFontFamily,
-                fontSize = 9.sp,
+                fontSize = 8.sp,
                 color = TextMuted
             )
         }
@@ -371,13 +540,13 @@ private fun LandscapeMissionPill(
 
     Column(
         modifier = Modifier
-            .widthIn(min = 172.dp, max = 232.dp)
+            .widthIn(min = 164.dp, max = 224.dp)
             .clip(RoundedCornerShape(11.dp))
             .background(PanelDark)
             .border(1.dp, accent.copy(alpha = 0.42f), RoundedCornerShape(11.dp))
-            .padding(horizontal = 10.dp, vertical = if (compact) 4.dp else 5.dp)
+            .padding(horizontal = 9.dp, vertical = if (compact) 4.dp else 5.dp)
             .testTag("landscape_mission_pill"),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -446,7 +615,7 @@ private fun LandscapeTimerPill(
             .background(PanelDark)
             .border(
                 1.dp,
-                if (isLow) DangerRed.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.14f),
+                if (isLow) DangerRed.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.16f),
                 RoundedCornerShape(14.dp)
             )
             .padding(horizontal = 14.dp, vertical = if (compact) 4.dp else 6.dp),
@@ -498,10 +667,10 @@ private fun LandscapeSpeedAndNitroPanel(
             .background(PanelDark)
             .border(
                 width = 1.dp,
-                color = if (nitroActive) BoostCyan.copy(alpha = 0.65f) else Color.White.copy(alpha = 0.16f),
+                color = if (nitroActive) BoostCyan.copy(alpha = 0.72f) else Color.White.copy(alpha = 0.16f),
                 shape = RoundedCornerShape(14.dp)
             )
-            .padding(horizontal = 11.dp, vertical = if (compact) 6.dp else 8.dp),
+            .padding(horizontal = 10.dp, vertical = if (compact) 5.dp else 7.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Row(
@@ -511,22 +680,23 @@ private fun LandscapeSpeedAndNitroPanel(
         ) {
             Row(
                 verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 Text(
                     text = speedKmh.toString(),
-                    fontFamily = JetBrainsMonoFontFamily,
-                    fontSize = if (compact) 24.sp else 28.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = TextPrimary
+                    fontFamily = OrbitronFontFamily,
+                    fontSize = if (compact) 22.sp else 26.sp,
+                    fontWeight = FontWeight.Black,
+                    fontStyle = FontStyle.Italic,
+                    color = if (nitroActive) BoostCyan else TextPrimary
                 )
                 Text(
                     text = "KM/H",
                     fontFamily = JetBrainsMonoFontFamily,
-                    fontSize = 9.sp,
+                    fontSize = 8.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextMuted,
-                    modifier = Modifier.padding(bottom = 4.dp)
+                    modifier = Modifier.padding(bottom = 3.dp)
                 )
             }
 
@@ -538,10 +708,10 @@ private fun LandscapeSpeedAndNitroPanel(
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
                 Text(
-                    text = "GEAR $gear",
-                    fontFamily = JetBrainsMonoFontFamily,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.ExtraBold,
+                    text = "G$gear",
+                    fontFamily = OrbitronFontFamily,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
                     color = BoostCyan
                 )
             }
@@ -550,7 +720,7 @@ private fun LandscapeSpeedAndNitroPanel(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             Text(
                 text = "N₂O",
@@ -562,10 +732,10 @@ private fun LandscapeSpeedAndNitroPanel(
             Box(
                 modifier = Modifier
                     .weight(1f)
-                    .height(if (compact) 8.dp else 10.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                    .height(if (compact) 7.dp else 9.dp)
+                    .clip(RoundedCornerShape(5.dp))
                     .background(Color.White.copy(alpha = 0.08f))
-                    .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(6.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(5.dp))
             ) {
                 val frac = (nitroPercent / 100f).coerceIn(0f, 1f)
                 Box(

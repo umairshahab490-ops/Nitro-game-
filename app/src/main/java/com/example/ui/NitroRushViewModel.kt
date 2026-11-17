@@ -137,7 +137,8 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
                 prefs to routes
             }.collectLatest { (prefs, routes) ->
                 audioEngine.muted = prefs.muted
-                val bike = BikeCatalog.findById(prefs.equippedBikeId)
+                val baseBike = BikeCatalog.findById(prefs.equippedBikeId)
+                val bike = BikeCatalog.withPaint(baseBike, prefs.bikePaintIds[baseBike.id])
                 val upgrades = prefs.bikeUpgrades[bike.id] ?: BikeUpgradeState()
                 val route = routes.firstOrNull { it.id == prefs.activeRouteId } ?: routes.first()
                 gameEngine.applyConfig(
@@ -294,6 +295,11 @@ class NitroRushViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun equipBike(bikeId: String) = viewModelScope.launch {
         repository.equipBike(bikeId)
+        audioEngine.play(SoundEffect.PICKUP)
+    }
+
+    fun setBikePaint(bikeId: String, paintId: String) = viewModelScope.launch {
+        repository.setBikePaint(bikeId, paintId)
         audioEngine.play(SoundEffect.PICKUP)
     }
 

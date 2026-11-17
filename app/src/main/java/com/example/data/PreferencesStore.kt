@@ -29,6 +29,7 @@ data class PlayerPreferencesSnapshot(
     val ownedBikeIds: Set<String> = setOf(BikeCatalog.bikes.first().id),
     val equippedBikeId: String = BikeCatalog.bikes.first().id,
     val bikeUpgrades: Map<String, BikeUpgradeState> = emptyMap(),
+    val bikePaintIds: Map<String, String> = emptyMap(),
     val difficulty: Difficulty = Difficulty.PRO,
     val gameMode: GameMode = GameMode.TIME_ATTACK,
     val trafficMode: TrafficMode = TrafficMode.ONE_WAY,
@@ -52,6 +53,7 @@ class PreferencesStore(private val context: Context) {
         val OWNED_BIKES = stringSetPreferencesKey("owned_bikes")
         val EQUIPPED_BIKE = stringPreferencesKey("equipped_bike")
         val BIKE_UPGRADES_JSON = stringPreferencesKey("bike_upgrades_json")
+        val BIKE_PAINTS_JSON = stringPreferencesKey("bike_paints_json")
         val DIFFICULTY = stringPreferencesKey("difficulty")
         val GAME_MODE = stringPreferencesKey("game_mode")
         val TRAFFIC_MODE = stringPreferencesKey("traffic_mode")
@@ -77,6 +79,7 @@ class PreferencesStore(private val context: Context) {
             ownedBikeIds = owned,
             equippedBikeId = equipped,
             bikeUpgrades = parseUpgrades(prefs[Keys.BIKE_UPGRADES_JSON]),
+            bikePaintIds = parseStringMap(prefs[Keys.BIKE_PAINTS_JSON]),
             difficulty = runCatching { Difficulty.valueOf(prefs[Keys.DIFFICULTY] ?: "PRO") }
                 .getOrDefault(Difficulty.PRO),
             gameMode = runCatching { GameMode.valueOf(prefs[Keys.GAME_MODE] ?: "TIME_ATTACK") }
@@ -108,6 +111,11 @@ class PreferencesStore(private val context: Context) {
     suspend fun setMuted(muted: Boolean) = update { it[Keys.MUTED] = muted }
     suspend fun setActiveRouteId(routeId: String) = update { it[Keys.ACTIVE_ROUTE_ID] = routeId }
     suspend fun setEquippedBike(bikeId: String) = update { it[Keys.EQUIPPED_BIKE] = bikeId }
+    suspend fun setBikePaint(bikeId: String, paintId: String) = update { prefs ->
+        val map = parseStringMap(prefs[Keys.BIKE_PAINTS_JSON]).toMutableMap()
+        map[bikeId] = paintId
+        prefs[Keys.BIKE_PAINTS_JSON] = JSONObject(map as Map<*, *>).toString()
+    }
 
     suspend fun buyBike(bikeId: String, priceUsd: Int): Boolean {
         var success = false
@@ -254,6 +262,21 @@ class PreferencesStore(private val context: Context) {
             })
         }
         return root.toString()
+    }
+
+    private fun parseStringMap(json: String?): Map<String, String> {
+        if (json.isNullOrBlank()) return emptyMap()
+        return runCatching {
+            val obj = JSONObject(json)
+            val result = mutableMapOf<String, String>()
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val id = keys.next()
+                val value = obj.optString(id)
+                if (value.isNotBlank()) result[id] = value
+            }
+            result
+        }.getOrDefault(emptyMap())
     }
 
     private fun parseDailyProgress(json: String?): Map<MissionMetric, Int> {

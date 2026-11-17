@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -38,8 +39,8 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,8 +57,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -74,7 +80,10 @@ import com.example.ui.HudUiState
 import com.example.ui.theme.AmberGold
 import com.example.ui.theme.BoostCyan
 import com.example.ui.theme.CashGreen
+import com.example.ui.theme.CharcoalBg
+import com.example.ui.theme.CrimsonPlayStart
 import com.example.ui.theme.DangerRed
+import com.example.ui.theme.EmeraldAccent
 import com.example.ui.theme.JetBrainsMonoFontFamily
 import com.example.ui.theme.NeonPink
 import com.example.ui.theme.OrbitronFontFamily
@@ -204,7 +213,7 @@ private fun PortraitRacingHudAndControls(
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.safeDrawing)
     ) {
-        // Top Telemetry Bar
+        // Top Telemetry Bar matching Portrait Racing HUD mockup
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -212,14 +221,13 @@ private fun PortraitRacingHudAndControls(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top
         ) {
-            // Left: Score + Lives + Shield + Bonus Cash
             Column {
                 Text("SCORE", fontFamily = JetBrainsMonoFontFamily, fontSize = 9.sp, color = TextMuted)
                 Text(
                     text = String.format(Locale.US, "%,d", hud.score),
-                    fontFamily = JetBrainsMonoFontFamily,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = OrbitronFontFamily,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black,
                     color = TextPrimary
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -230,7 +238,7 @@ private fun PortraitRacingHudAndControls(
                     for (i in 0 until 3) {
                         Box(
                             modifier = Modifier
-                                .size(11.dp)
+                                .size(10.dp)
                                 .clip(CircleShape)
                                 .background(
                                     if (i < hud.lives) NeonPink else Color.White.copy(alpha = 0.16f)
@@ -257,7 +265,6 @@ private fun PortraitRacingHudAndControls(
                 }
             }
 
-            // Center: Timer (or Survival Stopwatch) + Status Chips
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 val isLow = gameMode == GameMode.TIME_ATTACK && hud.timeLeft < 10f && hud.gameState == GameState.RUNNING
                 Text(
@@ -297,7 +304,6 @@ private fun PortraitRacingHudAndControls(
                 }
             }
 
-            // Right: Distance & Best
             Column(horizontalAlignment = Alignment.End) {
                 Text("DISTANCE", fontFamily = JetBrainsMonoFontFamily, fontSize = 9.sp, color = TextMuted)
                 Text(
@@ -333,13 +339,13 @@ private fun PortraitRacingHudAndControls(
             exit = fadeOut(tween(350)),
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 128.dp)
+                .padding(top = 122.dp)
         ) {
             banner?.let {
                 Text(
                     text = it.text,
                     fontFamily = OrbitronFontFamily,
-                    fontSize = 24.sp,
+                    fontSize = 26.sp,
                     fontWeight = FontWeight.Black,
                     fontStyle = FontStyle.Italic,
                     color = Color(it.colorArgb)
@@ -351,46 +357,53 @@ private fun PortraitRacingHudAndControls(
         if (hud.gameState == GameState.COUNTDOWN && hud.countdownLabel.isNotEmpty()) {
             Text(
                 text = hud.countdownLabel,
-                fontFamily = JetBrainsMonoFontFamily,
-                fontSize = 88.sp,
-                fontWeight = FontWeight.ExtraBold,
+                fontFamily = OrbitronFontFamily,
+                fontSize = 86.sp,
+                fontWeight = FontWeight.Black,
+                fontStyle = FontStyle.Italic,
                 color = NeonPink,
                 modifier = Modifier.align(Alignment.Center)
             )
         }
 
-        // Portrait: Speedometer + Nitro bar stacked over 4-column bottom control deck
+        // Portrait Cockpit: Arc Speedometer + Gear hex badge centered over unified 4-pad deck
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            SpeedAndNitroStrip(
+            PortraitArcSpeedometerAndNitro(
                 speedKmh = hud.speedKmh,
                 gear = hud.gear,
                 nitroPercent = hud.nitroPercent,
-                modifier = Modifier.fillMaxWidth()
+                nitroActive = hud.nitroActive
             )
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color(0xD20B101C))
+                    .border(1.2.dp, BoostCyan.copy(alpha = 0.35f), RoundedCornerShape(24.dp))
+                    .padding(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 ControlPad(
                     label = if (tiltEnabled) "TILT/L" else "LEFT",
                     icon = Icons.Default.ChevronLeft,
                     accent = BoostCyan,
-                    modifier = Modifier.weight(1.25f).height(76.dp).testTag("pad_left"),
+                    modifier = Modifier.weight(1.1f).height(66.dp).testTag("pad_left"),
                     onPressedChange = onLeftPress
                 )
                 ControlPad(
                     label = "BRAKE",
-                    icon = Icons.Default.KeyboardArrowDown,
+                    icon = Icons.Default.RadioButtonChecked,
                     accent = DangerRed,
-                    modifier = Modifier.weight(0.85f).height(76.dp).testTag("pad_brake"),
+                    modifier = Modifier.weight(1f).height(66.dp).testTag("pad_brake"),
                     onPressedChange = onBrakePress
                 )
                 ControlPad(
@@ -398,17 +411,153 @@ private fun PortraitRacingHudAndControls(
                     icon = Icons.Default.Bolt,
                     accent = BoostCyan,
                     dimmed = hud.nitroPercent <= 0f,
-                    modifier = Modifier.weight(0.85f).height(76.dp).testTag("pad_nitro"),
+                    modifier = Modifier.weight(1f).height(66.dp).testTag("pad_nitro"),
                     onPressedChange = onNitroPress
                 )
                 ControlPad(
                     label = if (tiltEnabled) "TILT/R" else "RIGHT",
                     icon = Icons.Default.ChevronRight,
                     accent = BoostCyan,
-                    modifier = Modifier.weight(1.25f).height(76.dp).testTag("pad_right"),
+                    modifier = Modifier.weight(1.1f).height(66.dp).testTag("pad_right"),
                     onPressedChange = onRightPress
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun PortraitArcSpeedometerAndNitro(
+    speedKmh: Int,
+    gear: Int,
+    nitroPercent: Float,
+    nitroActive: Boolean
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Arc Speedometer dial matching Portrait HUD mockup
+            Box(
+                modifier = Modifier
+                    .width(176.dp)
+                    .height(100.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                val speedFrac = (speedKmh / 360f).coerceIn(0.03f, 1f)
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val strokeW = 10.dp.toPx()
+                    val pad = strokeW * 0.7f
+                    val arcSize = Size(size.width - pad * 2f, size.width - pad * 2f)
+                    val topLeft = Offset(pad, 6.dp.toPx())
+
+                    drawCircle(
+                        color = CharcoalBg.copy(alpha = 0.72f),
+                        radius = size.width * 0.44f,
+                        center = Offset(size.width * 0.5f, size.height * 0.78f)
+                    )
+                    drawArc(
+                        color = Color.White.copy(alpha = 0.14f),
+                        startAngle = 165f,
+                        sweepAngle = 210f,
+                        useCenter = false,
+                        topLeft = topLeft,
+                        size = arcSize,
+                        style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                    )
+                    drawArc(
+                        brush = Brush.horizontalGradient(
+                            listOf(BoostCyan, EmeraldAccent, AmberGold, CrimsonPlayStart)
+                        ),
+                        startAngle = 165f,
+                        sweepAngle = 210f * speedFrac,
+                        useCenter = false,
+                        topLeft = topLeft,
+                        size = arcSize,
+                        style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                    )
+                }
+
+                Column(
+                    modifier = Modifier.padding(top = 18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = speedKmh.toString(),
+                        fontFamily = OrbitronFontFamily,
+                        fontSize = 30.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (nitroActive) BoostCyan else TextPrimary
+                    )
+                    Text(
+                        text = "KM/H",
+                        fontFamily = JetBrainsMonoFontFamily,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextMuted
+                    )
+                }
+            }
+
+            // Hexagonal GEAR badge matching Portrait HUD mockup
+            Box(
+                modifier = Modifier.size(56.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    val hex = Path().apply {
+                        moveTo(w * 0.5f, 2f)
+                        lineTo(w - 3f, h * 0.27f)
+                        lineTo(w - 3f, h * 0.73f)
+                        lineTo(w * 0.5f, h - 2f)
+                        lineTo(3f, h * 0.73f)
+                        lineTo(3f, h * 0.27f)
+                        close()
+                    }
+                    drawPath(hex, CharcoalBg.copy(alpha = 0.86f))
+                    drawPath(hex, BoostCyan.copy(alpha = 0.55f), style = Stroke(width = 2.dp.toPx()))
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "GEAR",
+                        fontFamily = JetBrainsMonoFontFamily,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextMuted
+                    )
+                    Text(
+                        text = gear.toString(),
+                        fontFamily = OrbitronFontFamily,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Black,
+                        color = TextPrimary
+                    )
+                }
+            }
+        }
+
+        // Sleek Nitro gauge bar below dial
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.72f)
+                .height(8.dp)
+                .clip(RoundedCornerShape(5.dp))
+                .background(Color.White.copy(alpha = 0.12f))
+                .border(1.dp, BoostCyan.copy(alpha = 0.35f), RoundedCornerShape(5.dp))
+        ) {
+            val frac = (nitroPercent / 100f).coerceIn(0f, 1f)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(frac)
+                    .background(Brush.horizontalGradient(listOf(BoostCyan, NeonPink)))
+            )
         }
     }
 }
@@ -430,7 +579,7 @@ internal fun TimerDisplayText(
         Text(
             text = timeDisplay,
             fontFamily = JetBrainsMonoFontFamily,
-            fontSize = if (isLandscape) 28.sp else 34.sp,
+            fontSize = if (isLandscape) 26.sp else 32.sp,
             fontWeight = FontWeight.ExtraBold,
             color = DangerRed,
             modifier = Modifier.graphicsLayer {
@@ -442,66 +591,10 @@ internal fun TimerDisplayText(
         Text(
             text = timeDisplay,
             fontFamily = JetBrainsMonoFontFamily,
-            fontSize = if (isLandscape) 28.sp else 34.sp,
+            fontSize = if (isLandscape) 26.sp else 32.sp,
             fontWeight = FontWeight.ExtraBold,
             color = TextPrimary
         )
-    }
-}
-
-@Composable
-private fun SpeedAndNitroStrip(
-    speedKmh: Int,
-    gear: Int,
-    nitroPercent: Float,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier) {
-        Row(
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                text = speedKmh.toString(),
-                fontFamily = JetBrainsMonoFontFamily,
-                fontSize = 32.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = TextPrimary
-            )
-            Text(
-                text = "KM/H · GEAR ",
-                fontFamily = JetBrainsMonoFontFamily,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextMuted,
-                modifier = Modifier.padding(bottom = 5.dp)
-            )
-            Text(
-                text = gear.toString(),
-                fontFamily = JetBrainsMonoFontFamily,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = BoostCyan,
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(12.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color.White.copy(alpha = 0.08f))
-                .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(8.dp))
-        ) {
-            val frac = (nitroPercent / 100f).coerceIn(0f, 1f)
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(frac)
-                    .background(Brush.horizontalGradient(listOf(BoostCyan, NeonPink)))
-            )
-        }
     }
 }
 
@@ -532,11 +625,11 @@ internal fun ControlPad(
             .alpha(if (dimmed && !pressed) 0.48f else 1f)
             .clip(RoundedCornerShape(16.dp))
             .background(
-                if (pressed) accent.copy(alpha = 0.24f) else Color(0xB8101628)
+                if (pressed) accent.copy(alpha = 0.26f) else Color(0xCC12192B)
             )
             .border(
                 width = 1.2.dp,
-                color = if (pressed) accent else Color.White.copy(alpha = 0.18f),
+                color = if (pressed) accent else Color.White.copy(alpha = 0.16f),
                 shape = RoundedCornerShape(16.dp)
             )
             .pointerInput(Unit) {
@@ -562,11 +655,11 @@ internal fun ControlPad(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(icon, contentDescription = label, tint = if (pressed) accent else TextPrimary, modifier = Modifier.size(26.dp))
+        Icon(icon, contentDescription = label, tint = if (pressed) accent else TextPrimary, modifier = Modifier.size(24.dp))
         Text(
             text = label,
             fontFamily = JetBrainsMonoFontFamily,
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.ExtraBold,
             color = if (pressed) accent else TextPrimary
         )

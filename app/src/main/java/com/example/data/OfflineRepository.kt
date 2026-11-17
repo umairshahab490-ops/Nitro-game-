@@ -86,6 +86,7 @@ class OfflineRepository(
     suspend fun setMuted(muted: Boolean) = prefs.setMuted(muted)
     suspend fun setActiveRouteId(id: String) = prefs.setActiveRouteId(id)
     suspend fun equipBike(bikeId: String) = prefs.setEquippedBike(bikeId)
+    suspend fun setBikePaint(bikeId: String, paintId: String) = prefs.setBikePaint(bikeId, paintId)
 
     suspend fun buyBike(bike: BikeModel): Boolean = prefs.buyBike(bike.id, bike.msrpUsd)
 
