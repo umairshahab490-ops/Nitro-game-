@@ -44,7 +44,8 @@ fun LiveMiniMapHud(
     route: RealRoadTrack,
     progressNorm: Float,
     liveGpsLocked: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
 ) {
     val normalizedPoints = remember(route.id) {
         val wps = route.waypoints
@@ -67,11 +68,11 @@ fun LiveMiniMapHud(
 
     Column(
         modifier = modifier
-            .width(108.dp)
+            .width(if (compact) 100.dp else 108.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(PanelDark)
             .border(1.dp, BoostCyan.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-            .padding(6.dp),
+            .padding(if (compact) 5.dp else 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
@@ -108,7 +109,7 @@ fun LiveMiniMapHud(
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(54.dp)
+                .height(if (compact) 40.dp else 54.dp)
         ) {
             val w = size.width
             val h = size.height

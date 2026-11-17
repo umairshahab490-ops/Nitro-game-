@@ -18,15 +18,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -92,7 +93,9 @@ fun TopUtilityButtons(
 ) {
     Row(
         modifier = modifier
-            .statusBarsPadding()
+            .windowInsetsPadding(
+                WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+            )
             .padding(top = 8.dp, end = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -145,12 +148,62 @@ fun AdaptiveRacingHudAndControls(
     val onNitroPress = remember(onTouchInput) { { pressed: Boolean -> onTouchInput(null, null, null, pressed) } }
 
     BoxWithConstraints(
-        modifier = modifier
+        modifier = modifier.fillMaxSize()
+    ) {
+        val isLandscape = maxWidth > maxHeight
+        if (isLandscape) {
+            LandscapeRacingHudAndControls(
+                hud = hud,
+                bestScore = bestScore,
+                gameMode = gameMode,
+                activeRoute = activeRoute,
+                liveGpsLocked = liveGpsLocked,
+                tiltEnabled = tiltEnabled,
+                banner = banner,
+                maxWidth = maxWidth,
+                maxHeight = maxHeight,
+                onLeftPress = onLeftPress,
+                onRightPress = onRightPress,
+                onBrakePress = onBrakePress,
+                onNitroPress = onNitroPress
+            )
+        } else {
+            PortraitRacingHudAndControls(
+                hud = hud,
+                bestScore = bestScore,
+                gameMode = gameMode,
+                activeRoute = activeRoute,
+                liveGpsLocked = liveGpsLocked,
+                tiltEnabled = tiltEnabled,
+                banner = banner,
+                onLeftPress = onLeftPress,
+                onRightPress = onRightPress,
+                onBrakePress = onBrakePress,
+                onNitroPress = onNitroPress
+            )
+        }
+    }
+}
+
+@Composable
+private fun PortraitRacingHudAndControls(
+    hud: HudUiState,
+    bestScore: Int,
+    gameMode: GameMode,
+    activeRoute: RealRoadTrack,
+    liveGpsLocked: Boolean,
+    tiltEnabled: Boolean,
+    banner: BannerMessage?,
+    onLeftPress: (Boolean) -> Unit,
+    onRightPress: (Boolean) -> Unit,
+    onBrakePress: (Boolean) -> Unit,
+    onNitroPress: (Boolean) -> Unit
+) {
+    Box(
+        modifier = Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.safeDrawing)
     ) {
-        val isLandscape = maxWidth > maxHeight
-
         // Top Telemetry Bar
         Row(
             modifier = Modifier
@@ -222,7 +275,7 @@ fun AdaptiveRacingHudAndControls(
                 }
                 TimerDisplayText(
                     timeDisplay = timeDisplay,
-                    isLandscape = isLandscape,
+                    isLandscape = false,
                     isLow = isLow
                 )
                 if (hud.isDrafting) {
@@ -280,7 +333,7 @@ fun AdaptiveRacingHudAndControls(
             exit = fadeOut(tween(350)),
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = if (isLandscape) 66.dp else 128.dp)
+                .padding(top = 128.dp)
         ) {
             banner?.let {
                 Text(
@@ -306,118 +359,62 @@ fun AdaptiveRacingHudAndControls(
             )
         }
 
-        // Bottom Controls & Speedometer — adapts cleanly between Portrait & Landscape
-        if (isLandscape) {
-            // Landscape: Side-docked thumb controls + center speedometer & nitro
+        // Portrait: Speedometer + Nitro bar stacked over 4-column bottom control deck
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            SpeedAndNitroStrip(
+                speedKmh = hud.speedKmh,
+                gear = hud.gear,
+                nitroPercent = hud.nitroPercent,
+                modifier = Modifier.fillMaxWidth()
+            )
+
             Row(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ControlPad(
-                        label = if (tiltEnabled) "TILT/L" else "LEFT",
-                        icon = Icons.Default.ChevronLeft,
-                        accent = BoostCyan,
-                        modifier = Modifier.width(86.dp).height(68.dp).testTag("pad_left"),
-                        onPressedChange = onLeftPress
-                    )
-                    ControlPad(
-                        label = "BRAKE",
-                        icon = Icons.Default.KeyboardArrowDown,
-                        accent = DangerRed,
-                        modifier = Modifier.width(78.dp).height(68.dp).testTag("pad_brake"),
-                        onPressedChange = onBrakePress
-                    )
-                }
-
-                SpeedAndNitroStrip(
-                    speedKmh = hud.speedKmh,
-                    gear = hud.gear,
-                    nitroPercent = hud.nitroPercent,
-                    modifier = Modifier.width(240.dp)
+                ControlPad(
+                    label = if (tiltEnabled) "TILT/L" else "LEFT",
+                    icon = Icons.Default.ChevronLeft,
+                    accent = BoostCyan,
+                    modifier = Modifier.weight(1.25f).height(76.dp).testTag("pad_left"),
+                    onPressedChange = onLeftPress
                 )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ControlPad(
-                        label = "NITRO",
-                        icon = Icons.Default.Bolt,
-                        accent = BoostCyan,
-                        dimmed = hud.nitroPercent <= 0f,
-                        modifier = Modifier.width(78.dp).height(68.dp).testTag("pad_nitro"),
-                        onPressedChange = onNitroPress
-                    )
-                    ControlPad(
-                        label = if (tiltEnabled) "TILT/R" else "RIGHT",
-                        icon = Icons.Default.ChevronRight,
-                        accent = BoostCyan,
-                        modifier = Modifier.width(86.dp).height(68.dp).testTag("pad_right"),
-                        onPressedChange = onRightPress
-                    )
-                }
-            }
-        } else {
-            // Portrait: Speedometer + Nitro bar stacked over 4-column bottom control deck
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                SpeedAndNitroStrip(
-                    speedKmh = hud.speedKmh,
-                    gear = hud.gear,
-                    nitroPercent = hud.nitroPercent,
-                    modifier = Modifier.fillMaxWidth()
+                ControlPad(
+                    label = "BRAKE",
+                    icon = Icons.Default.KeyboardArrowDown,
+                    accent = DangerRed,
+                    modifier = Modifier.weight(0.85f).height(76.dp).testTag("pad_brake"),
+                    onPressedChange = onBrakePress
                 )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ControlPad(
-                        label = if (tiltEnabled) "TILT/L" else "LEFT",
-                        icon = Icons.Default.ChevronLeft,
-                        accent = BoostCyan,
-                        modifier = Modifier.weight(1.25f).height(76.dp).testTag("pad_left"),
-                        onPressedChange = onLeftPress
-                    )
-                    ControlPad(
-                        label = "BRAKE",
-                        icon = Icons.Default.KeyboardArrowDown,
-                        accent = DangerRed,
-                        modifier = Modifier.weight(0.85f).height(76.dp).testTag("pad_brake"),
-                        onPressedChange = onBrakePress
-                    )
-                    ControlPad(
-                        label = "NITRO",
-                        icon = Icons.Default.Bolt,
-                        accent = BoostCyan,
-                        dimmed = hud.nitroPercent <= 0f,
-                        modifier = Modifier.weight(0.85f).height(76.dp).testTag("pad_nitro"),
-                        onPressedChange = onNitroPress
-                    )
-                    ControlPad(
-                        label = if (tiltEnabled) "TILT/R" else "RIGHT",
-                        icon = Icons.Default.ChevronRight,
-                        accent = BoostCyan,
-                        modifier = Modifier.weight(1.25f).height(76.dp).testTag("pad_right"),
-                        onPressedChange = onRightPress
-                    )
-                }
+                ControlPad(
+                    label = "NITRO",
+                    icon = Icons.Default.Bolt,
+                    accent = BoostCyan,
+                    dimmed = hud.nitroPercent <= 0f,
+                    modifier = Modifier.weight(0.85f).height(76.dp).testTag("pad_nitro"),
+                    onPressedChange = onNitroPress
+                )
+                ControlPad(
+                    label = if (tiltEnabled) "TILT/R" else "RIGHT",
+                    icon = Icons.Default.ChevronRight,
+                    accent = BoostCyan,
+                    modifier = Modifier.weight(1.25f).height(76.dp).testTag("pad_right"),
+                    onPressedChange = onRightPress
+                )
             }
         }
     }
 }
 
 @Composable
-private fun TimerDisplayText(
+internal fun TimerDisplayText(
     timeDisplay: String,
     isLandscape: Boolean,
     isLow: Boolean
@@ -509,7 +506,7 @@ private fun SpeedAndNitroStrip(
 }
 
 @Composable
-private fun ControlPad(
+internal fun ControlPad(
     label: String,
     icon: ImageVector,
     accent: Color,
